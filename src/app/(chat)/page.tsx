@@ -16,10 +16,16 @@ interface ConversationItem {
   lastMessageAt: string;
 }
 
+function getInitialChatId(): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get("chat");
+}
+
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(getInitialChatId);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
@@ -62,10 +68,25 @@ export default function Home() {
     }
   }, []);
 
-  // Load conversations on mount
+  // Load conversations on mount (+ restore chat from URL)
   useEffect(() => {
     fetchConversations();
-  }, [fetchConversations]);
+    if (activeConversationId) {
+      fetchMessages(activeConversationId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync activeConversationId → URL query param
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (activeConversationId) {
+      url.searchParams.set("chat", activeConversationId);
+    } else {
+      url.searchParams.delete("chat");
+    }
+    window.history.replaceState(null, "", url.toString());
+  }, [activeConversationId]);
 
   // Select a conversation
   const handleSelectConversation = useCallback(
@@ -97,6 +118,26 @@ export default function Home() {
       }
     },
     [activeConversationId]
+  );
+
+  // Rename a conversation
+  const handleRenameConversation = useCallback(
+    async (id: string, title: string) => {
+      try {
+        const res = await fetch(`/api/conversations/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        });
+        if (!res.ok) return;
+        setConversations((prev) =>
+          prev.map((c) => (c._id === id ? { ...c, title } : c))
+        );
+      } catch {
+        // silently fail
+      }
+    },
+    []
   );
 
   // Stream orchestrator response via SSE. Shared by handleSendMessage and handleRetry.
@@ -449,6 +490,7 @@ export default function Home() {
             onSelect={handleSelectConversation}
             onNewChat={handleNewChat}
             onDelete={handleDeleteConversation}
+            onRename={handleRenameConversation}
           />
         </div>
       </motion.div>
