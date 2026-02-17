@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ChatContainer } from "./components/chat-container";
 import { Sidebar } from "./components/sidebar";
@@ -29,6 +29,7 @@ export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
+  const streamActiveRef = useRef(false);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
@@ -395,7 +396,12 @@ export default function Home() {
           );
         }
 
-        await streamResponse(convId!, content);
+        streamActiveRef.current = true;
+        try {
+          await streamResponse(convId!, content);
+        } finally {
+          streamActiveRef.current = false;
+        }
 
         // Refresh sidebar to pick up new title & ordering
         fetchConversations();
@@ -431,18 +437,19 @@ export default function Home() {
       }
 
       setIsLoading(true);
+      streamActiveRef.current = true;
       try {
         await streamResponse(activeConversationId, lastUserMsg.content);
         fetchConversations();
       } finally {
+        streamActiveRef.current = false;
         setIsLoading(false);
       }
     },
     [activeConversationId, messages, fetchConversations, streamResponse]
   );
 
-  // Handle user question submission — save answers and resolve pending Promise
-  // so the model continues on the same SSE stream (no extra user message).
+  // Handle user question submission — save answers and unblock the model.
   const handleQuestionSubmit = useCallback(
     async (messageId: string, answers: Record<string, string>) => {
       // Mark the question as answered in local state
@@ -456,8 +463,8 @@ export default function Home() {
 
       if (!activeConversationId) return;
 
-      // POST to answer endpoint — saves to DB and resolves the pending Promise,
-      // which unblocks canUseTool and lets the model continue.
+      // POST to answer endpoint — saves to DB. If a stream is alive, this
+      // unblocks the poll loop in onQuestion and the model continues.
       try {
         await fetch(`/api/conversations/${activeConversationId}/answer`, {
           method: "POST",
@@ -468,8 +475,12 @@ export default function Home() {
         // Best-effort — local state already updated
       }
 
-      // Model is resuming on the existing stream
-      setIsLoading(true);
+      // Only show loading if a stream is actively running (will resume).
+      // After a page reload the stream is dead — the answer is saved to DB
+      // but no model will process it. The user can retry via the error card.
+      if (streamActiveRef.current) {
+        setIsLoading(true);
+      }
     },
     [activeConversationId]
   );
