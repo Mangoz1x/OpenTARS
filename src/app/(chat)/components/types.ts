@@ -38,6 +38,22 @@ export interface StatusInfo {
   stopReason?: StopReason;
   errorType?: ErrorType;
   details?: Record<string, string | number>;
+  retryable?: boolean;
+}
+
+/** Retryable error types — used at render time as a fallback for old DB records
+ *  that were saved before the `retryable` field existed. */
+const RETRYABLE_ERROR_TYPES = new Set([
+  "error_during_execution",
+  "stream_interrupted",
+  "error_max_turns",
+  "unknown",
+]);
+
+export function isRetryable(status: StatusInfo): boolean {
+  if (status.retryable !== undefined) return status.retryable;
+  if (status.level !== "error") return false;
+  return RETRYABLE_ERROR_TYPES.has(status.errorType ?? "");
 }
 
 // --- User questions (AskUserQuestion tool) ---

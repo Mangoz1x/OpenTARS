@@ -6,10 +6,8 @@ import { Conversation, Message } from "@/lib/db";
 import { runOrchestrator } from "@/lib/orchestrator";
 import type { UserQuestionData } from "@/lib/orchestrator";
 import { buildStopReasonStatus, buildErrorStatus } from "@/lib/status-builders";
-import {
-  setPendingAnswer,
-  clearPendingAnswer,
-} from "@/lib/orchestrator/pending-answers";
+
+const POLL_INTERVAL_MS = 500;
 
 const handler = compose(withAuth, withDatabase);
 
@@ -36,7 +34,6 @@ export const POST = handler(async (request: NextRequest) => {
   const abortController = new AbortController();
 
   request.signal.addEventListener("abort", () => {
-    clearPendingAnswer(conversationId);
     abortController.abort();
   });
 
@@ -83,7 +80,7 @@ export const POST = handler(async (request: NextRequest) => {
 
       // Called by canUseTool when the model invokes AskUserQuestion.
       // Flushes pre-question text, saves the question to DB, sends SSE events,
-      // then blocks until the user submits answers via the /answer endpoint.
+      // then polls MongoDB until the user submits answers via the /answer endpoint.
       const onQuestion = async (
         data: UserQuestionData
       ): Promise<Record<string, string>> => {
@@ -92,18 +89,13 @@ export const POST = handler(async (request: NextRequest) => {
         // Skeleton was already sent via the stream_event content_block_start
         // detection, so we go straight to saving and sending the real question.
 
-        let questionId: string | undefined;
-        try {
-          questionId = await saveMessage({
-            role: "user-question",
-            userQuestion: {
-              questions: data.questions,
-              answered: false,
-            },
-          });
-        } catch (err) {
-          console.error("[route] failed to save user_question:", err);
-        }
+        const questionId = await saveMessage({
+          role: "user-question",
+          userQuestion: {
+            questions: data.questions,
+            answered: false,
+          },
+        });
 
         send({
           type: "user_question",
@@ -115,9 +107,22 @@ export const POST = handler(async (request: NextRequest) => {
         // Signal client to start a new assistant message for post-question text
         send({ type: "segment_break" });
 
-        return new Promise<Record<string, string>>((resolve) => {
-          setPendingAnswer(conversationId, resolve);
-        });
+        // Poll MongoDB until the answer endpoint marks this question as answered.
+        // The /answer endpoint sets userQuestion.answered = true and populates
+        // userQuestion.answers. This is the single source of truth — no in-memory
+        // state shared across route bundles.
+        while (!abortController.signal.aborted) {
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+          const doc = await Message.findById(questionId).lean();
+          const uq = doc?.userQuestion as
+            | { answered?: boolean; answers?: Record<string, string> }
+            | undefined;
+          if (uq?.answered && uq.answers) {
+            return uq.answers;
+          }
+        }
+
+        throw new Error("Question cancelled");
       };
 
       try {
@@ -184,8 +189,6 @@ export const POST = handler(async (request: NextRequest) => {
             }
 
             case "error": {
-              clearPendingAnswer(conversationId);
-
               const errorStatusInfo = buildErrorStatus(
                 event.message,
                 event.errorType,
@@ -218,7 +221,6 @@ export const POST = handler(async (request: NextRequest) => {
         controller.close();
       } catch (err) {
         console.error("[route] stream error:", err);
-        clearPendingAnswer(conversationId);
 
         const errorStatusInfo = buildErrorStatus(
           "The response stream was interrupted. This can happen due to network issues. Try sending your message again.",
@@ -246,7 +248,6 @@ export const POST = handler(async (request: NextRequest) => {
       }
     },
     cancel() {
-      clearPendingAnswer(conversationId);
       abortController.abort();
     },
   });

@@ -71,11 +71,19 @@ export function buildErrorStatus(
 
   const info = errorMap[errorTypeKey] ?? errorMap.unknown;
 
+  const retryableTypes = new Set([
+    "error_during_execution",
+    "stream_interrupted",
+    "error_max_turns",
+    "unknown",
+  ]);
+
   return {
     level: errorTypeKey === "api_key_missing" ? "warning" : "error",
     title: info.title,
     description: info.description,
     errorType: errorTypeKey,
     stopReason: stopReason ?? null,
+    retryable: retryableTypes.has(errorTypeKey),
   };
 }

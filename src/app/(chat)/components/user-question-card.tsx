@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Check, MessageCircleQuestion, Send } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowRight, Check, MessageCircleQuestion, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { UserQuestion, UserQuestionItem } from "./types";
+
+// --- Single question (unchanged UI) ---
 
 interface SingleQuestionProps {
   item: UserQuestionItem;
@@ -27,7 +30,6 @@ function SingleQuestion({ item, selected, onToggle, disabled }: SingleQuestionPr
   const handleOtherClick = () => {
     if (disabled) return;
     setShowOther(true);
-    // For single select, clear other selections
     if (!item.multiSelect) {
       selected.forEach((s) => onToggle(s));
     }
@@ -123,94 +125,182 @@ function SingleQuestion({ item, selected, onToggle, disabled }: SingleQuestionPr
   );
 }
 
+// --- Answered state ---
+
+function AnsweredView({ question }: { question: UserQuestion }) {
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 p-4">
+      <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <Check className="h-3.5 w-3.5 text-emerald-500" />
+        <span className="font-medium">Answered</span>
+      </div>
+      {question.questions.map((q) => (
+        <div key={q.question} className="space-y-1">
+          <p className="text-sm text-muted-foreground">{q.question}</p>
+          <p className="text-sm font-medium text-foreground">
+            {question.answers?.[q.question] ?? "\u2014"}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- Slide animation variants ---
+
+const slideVariants = {
+  enter: (dir: number) => ({
+    x: dir > 0 ? 60 : -60,
+    opacity: 0,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (dir: number) => ({
+    x: dir > 0 ? -60 : 60,
+    opacity: 0,
+  }),
+};
+
+// --- Main card ---
+
 interface UserQuestionCardProps {
   question: UserQuestion;
   onSubmit: (answers: Record<string, string>) => void;
 }
 
 export function UserQuestionCard({ question, onSubmit }: UserQuestionCardProps) {
-  // Track selections per question (keyed by question text)
   const [selections, setSelections] = useState<Record<string, string[]>>({});
+  const [step, setStep] = useState(0);
+  const [direction, setDirection] = useState(1);
+
+  const total = question.questions.length;
+  const isSingle = total === 1;
+  const current = question.questions[step];
+  const isLast = step === total - 1;
+
+  const currentAnswered = (selections[current?.question] ?? []).length > 0;
 
   const handleToggle = useCallback(
     (questionText: string, multiSelect: boolean, label: string) => {
       setSelections((prev) => {
-        const current = prev[questionText] ?? [];
-
+        const cur = prev[questionText] ?? [];
         if (multiSelect) {
-          // Toggle the label in/out
-          const next = current.includes(label)
-            ? current.filter((l) => l !== label)
-            : [...current, label];
+          const next = cur.includes(label)
+            ? cur.filter((l) => l !== label)
+            : [...cur, label];
           return { ...prev, [questionText]: next };
         }
-
-        // Single select — replace
         return { ...prev, [questionText]: [label] };
       });
     },
     []
   );
 
-  const allAnswered = question.questions.every(
-    (q) => (selections[q.question] ?? []).length > 0
-  );
-
-  const handleSubmit = useCallback(() => {
-    const answers: Record<string, string> = {};
-    for (const q of question.questions) {
-      const selected = selections[q.question] ?? [];
-      answers[q.question] = selected.join(", ");
+  const handleNext = useCallback(() => {
+    if (isLast) {
+      // Submit
+      const answers: Record<string, string> = {};
+      for (const q of question.questions) {
+        answers[q.question] = (selections[q.question] ?? []).join(", ");
+      }
+      onSubmit(answers);
+    } else {
+      setDirection(1);
+      setStep((s) => s + 1);
     }
-    onSubmit(answers);
-  }, [question.questions, selections, onSubmit]);
+  }, [isLast, question.questions, selections, onSubmit]);
+
+  const handleBack = useCallback(() => {
+    setDirection(-1);
+    setStep((s) => s - 1);
+  }, []);
 
   if (question.answered) {
-    return (
-      <div className="rounded-lg border border-border bg-muted/30 p-4">
-        <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-          <Check className="h-3.5 w-3.5 text-emerald-500" />
-          <span className="font-medium">Answered</span>
-        </div>
-        {question.questions.map((q) => (
-          <div key={q.question} className="space-y-1">
-            <p className="text-sm text-muted-foreground">{q.question}</p>
-            <p className="text-sm font-medium text-foreground">
-              {question.answers?.[q.question] ?? "—"}
-            </p>
-          </div>
-        ))}
-      </div>
-    );
+    return <AnsweredView question={question} />;
   }
 
   return (
     <div className="rounded-lg border border-primary/20 bg-primary/[0.02] p-4">
+      {/* Header */}
       <div className="mb-4 flex items-center gap-2">
         <MessageCircleQuestion className="h-4 w-4 text-primary" />
         <span className="text-xs font-semibold text-primary">TARS needs your input</span>
+        {!isSingle && (
+          <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+            {step + 1} of {total}
+          </span>
+        )}
       </div>
 
-      <div className="space-y-6">
-        {question.questions.map((q) => (
-          <SingleQuestion
-            key={q.question}
-            item={q}
-            selected={selections[q.question] ?? []}
-            onToggle={(label) => handleToggle(q.question, q.multiSelect, label)}
-            disabled={question.answered}
-          />
-        ))}
+      {/* Step content with slide animation */}
+      <div className="relative overflow-hidden">
+        <AnimatePresence mode="wait" custom={direction} initial={false}>
+          <motion.div
+            key={step}
+            custom={direction}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+          >
+            <SingleQuestion
+              item={current}
+              selected={selections[current.question] ?? []}
+              onToggle={(label) => handleToggle(current.question, current.multiSelect, label)}
+              disabled={question.answered}
+            />
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      <div className="mt-4 flex justify-end">
-        <Button
-          size="sm"
-          disabled={!allAnswered}
-          onClick={handleSubmit}
-        >
-          Submit
-        </Button>
+      {/* Footer with step dots + navigation */}
+      <div className="mt-4 flex items-center justify-between">
+        {/* Step dots */}
+        {!isSingle ? (
+          <div className="flex items-center gap-1.5">
+            {question.questions.map((q, i) => {
+              const answered = (selections[q.question] ?? []).length > 0;
+              return (
+                <span
+                  key={q.question}
+                  className={`h-1.5 rounded-full transition-all ${
+                    i === step
+                      ? "w-4 bg-primary"
+                      : answered
+                        ? "w-1.5 bg-primary/40"
+                        : "w-1.5 bg-muted-foreground/20"
+                  }`}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div />
+        )}
+
+        {/* Buttons */}
+        <div className="flex items-center gap-2">
+          {step > 0 && (
+            <Button size="sm" variant="ghost" onClick={handleBack}>
+              Back
+            </Button>
+          )}
+          <Button
+            size="sm"
+            disabled={!currentAnswered}
+            onClick={handleNext}
+          >
+            {isLast ? "Submit" : (
+              <>
+                Next
+                <ArrowRight className="h-3.5 w-3.5" />
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

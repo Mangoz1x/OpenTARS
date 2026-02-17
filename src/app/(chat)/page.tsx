@@ -99,6 +99,212 @@ export default function Home() {
     [activeConversationId]
   );
 
+  // Stream orchestrator response via SSE. Shared by handleSendMessage and handleRetry.
+  const streamResponse = useCallback(
+    async (convId: string, content: string) => {
+      const chatRes = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: convId, message: content, model: selectedModel }),
+      });
+
+      if (!chatRes.ok || !chatRes.body) {
+        const errData = await chatRes.json().catch(() => null);
+        const errMsg = errData?.error ?? "Failed to get response from TARS.";
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "status",
+            content: "",
+            timestamp: new Date(),
+            statusInfo: buildErrorStatus(errMsg, "unknown"),
+          },
+        ]);
+        return;
+      }
+
+      const reader = chatRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // Mutable: reset on segment_break so post-question text becomes a new message
+      let assistantMsgId = crypto.randomUUID();
+      let assistantCreated = false;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line.startsWith("data: ")) continue;
+            const json = line.slice(6);
+
+            let event: Record<string, unknown>;
+            try {
+              event = JSON.parse(json);
+            } catch {
+              continue;
+            }
+
+            // --- Streaming text ---
+            if (event.type === "content_delta" && event.text) {
+              if (!assistantCreated) {
+                assistantCreated = true;
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: assistantMsgId,
+                    role: "assistant",
+                    content: event.text as string,
+                    timestamp: new Date(),
+                  },
+                ]);
+              } else {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, content: m.content + (event.text as string) }
+                      : m
+                  )
+                );
+              }
+            }
+
+            // --- User question loading (skeleton) ---
+            if (event.type === "user_question_loading") {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `question-${crypto.randomUUID()}`,
+                  role: "user-question",
+                  content: "",
+                  timestamp: new Date(),
+                },
+              ]);
+            }
+
+            // --- User question ready (replace skeleton with real card) ---
+            // Model is now paused in canUseTool, waiting for the user's answer.
+            if (event.type === "user_question" && event.data) {
+              setIsLoading(false);
+              const data = event.data as { questions: UserQuestion["questions"] };
+              const questionData: UserQuestion = {
+                questions: data.questions,
+                answered: false,
+              };
+              const questionDbId = event.messageId as string | undefined;
+
+              // Swap optimistic assistant ID → real DB ID
+              const assistantDbId = event.assistantMessageId as string | undefined;
+              if (assistantDbId) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId ? { ...m, id: assistantDbId } : m
+                  )
+                );
+              }
+
+              setMessages((prev) => {
+                const idx = [...prev]
+                  .reverse()
+                  .findIndex((m) => m.role === "user-question" && !m.userQuestion);
+                if (idx !== -1) {
+                  const realIdx = prev.length - 1 - idx;
+                  const updated = [...prev];
+                  updated[realIdx] = {
+                    ...updated[realIdx],
+                    ...(questionDbId ? { id: questionDbId } : {}),
+                    userQuestion: questionData,
+                  };
+                  return updated;
+                }
+                return [
+                  ...prev,
+                  {
+                    id: questionDbId ?? `question-${crypto.randomUUID()}`,
+                    role: "user-question" as const,
+                    content: "",
+                    timestamp: new Date(),
+                    userQuestion: questionData,
+                  },
+                ];
+              });
+            }
+
+            // --- Segment break: finalize current segment, reset for next ---
+            if (event.type === "segment_break") {
+              assistantMsgId = crypto.randomUUID();
+              assistantCreated = false;
+            }
+
+            // --- Done ---
+            if (event.type === "done") {
+              const statusInfo = event.statusInfo as ChatMessage["statusInfo"] | undefined;
+              const statusMsgDbId = event.statusMessageId as string | undefined;
+
+              if (statusInfo) {
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: statusMsgDbId ?? crypto.randomUUID(),
+                    role: "status",
+                    content: "",
+                    timestamp: new Date(),
+                    statusInfo,
+                  },
+                ]);
+              }
+
+              // Swap optimistic ID → real DB ID
+              const savedId = event.messageId as string | undefined;
+              if (savedId) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, id: savedId }
+                      : m
+                  )
+                );
+              }
+            }
+
+            // --- Error ---
+            if (event.type === "error") {
+              const statusInfo = event.statusInfo as ChatMessage["statusInfo"] ??
+                buildErrorStatus(
+                  (event.message as string) ?? "An error occurred.",
+                  event.errorType as string | undefined,
+                  (event.stopReason as StopReason) ?? null
+                );
+              const errorMsgDbId = event.messageId as string | undefined;
+
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: errorMsgDbId ?? crypto.randomUUID(),
+                  role: "status",
+                  content: "",
+                  timestamp: new Date(),
+                  statusInfo,
+                },
+              ]);
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+    [selectedModel]
+  );
+
   // Send a message
   const handleSendMessage = useCallback(
     async (content: string) => {
@@ -148,205 +354,7 @@ export default function Home() {
           );
         }
 
-        // Stream assistant response from orchestrator
-        const chatRes = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversationId: convId, message: content, model: selectedModel }),
-        });
-
-        if (!chatRes.ok || !chatRes.body) {
-          const errData = await chatRes.json().catch(() => null);
-          const errMsg = errData?.error ?? "Failed to get response from TARS.";
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              role: "status",
-              content: "",
-              timestamp: new Date(),
-              statusInfo: buildErrorStatus(errMsg, "unknown"),
-            },
-          ]);
-          fetchConversations();
-          return;
-        }
-
-        const reader = chatRes.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        // Mutable: reset on segment_break so post-question text becomes a new message
-        let assistantMsgId = crypto.randomUUID();
-        let assistantCreated = false;
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split("\n\n");
-            buffer = parts.pop() ?? "";
-
-            for (const part of parts) {
-              const line = part.trim();
-              if (!line.startsWith("data: ")) continue;
-              const json = line.slice(6);
-
-              let event: Record<string, unknown>;
-              try {
-                event = JSON.parse(json);
-              } catch {
-                continue;
-              }
-
-              // --- Streaming text ---
-              if (event.type === "content_delta" && event.text) {
-                if (!assistantCreated) {
-                  assistantCreated = true;
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      id: assistantMsgId,
-                      role: "assistant",
-                      content: event.text as string,
-                      timestamp: new Date(),
-                    },
-                  ]);
-                } else {
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsgId
-                        ? { ...m, content: m.content + (event.text as string) }
-                        : m
-                    )
-                  );
-                }
-              }
-
-              // --- User question loading (skeleton) ---
-              if (event.type === "user_question_loading") {
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    id: `question-${crypto.randomUUID()}`,
-                    role: "user-question",
-                    content: "",
-                    timestamp: new Date(),
-                  },
-                ]);
-              }
-
-              // --- User question ready (replace skeleton with real card) ---
-              // Model is now paused in canUseTool, waiting for the user's answer.
-              if (event.type === "user_question" && event.data) {
-                setIsLoading(false);
-                const data = event.data as { questions: UserQuestion["questions"] };
-                const questionData: UserQuestion = {
-                  questions: data.questions,
-                  answered: false,
-                };
-                const questionDbId = event.messageId as string | undefined;
-
-                // Swap optimistic assistant ID → real DB ID
-                const assistantDbId = event.assistantMessageId as string | undefined;
-                if (assistantDbId) {
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsgId ? { ...m, id: assistantDbId } : m
-                    )
-                  );
-                }
-
-                setMessages((prev) => {
-                  const idx = [...prev]
-                    .reverse()
-                    .findIndex((m) => m.role === "user-question" && !m.userQuestion);
-                  if (idx !== -1) {
-                    const realIdx = prev.length - 1 - idx;
-                    const updated = [...prev];
-                    updated[realIdx] = {
-                      ...updated[realIdx],
-                      ...(questionDbId ? { id: questionDbId } : {}),
-                      userQuestion: questionData,
-                    };
-                    return updated;
-                  }
-                  return [
-                    ...prev,
-                    {
-                      id: questionDbId ?? `question-${crypto.randomUUID()}`,
-                      role: "user-question" as const,
-                      content: "",
-                      timestamp: new Date(),
-                      userQuestion: questionData,
-                    },
-                  ];
-                });
-              }
-
-              // --- Segment break: reset so next content_delta creates a new message ---
-              if (event.type === "segment_break") {
-                assistantMsgId = crypto.randomUUID();
-                assistantCreated = false;
-              }
-
-              // --- Done ---
-              if (event.type === "done") {
-                const statusInfo = event.statusInfo as ChatMessage["statusInfo"] | undefined;
-                const statusMsgDbId = event.statusMessageId as string | undefined;
-
-                if (statusInfo) {
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      id: statusMsgDbId ?? crypto.randomUUID(),
-                      role: "status",
-                      content: "",
-                      timestamp: new Date(),
-                      statusInfo,
-                    },
-                  ]);
-                }
-
-                // Swap the current assistant message's optimistic ID → real DB ID
-                const savedId = event.messageId as string | undefined;
-                if (savedId) {
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsgId ? { ...m, id: savedId } : m
-                    )
-                  );
-                }
-              }
-
-              // --- Error ---
-              if (event.type === "error") {
-                const statusInfo = event.statusInfo as ChatMessage["statusInfo"] ??
-                  buildErrorStatus(
-                    (event.message as string) ?? "An error occurred.",
-                    event.errorType as string | undefined,
-                    (event.stopReason as StopReason) ?? null
-                  );
-                const errorMsgDbId = event.messageId as string | undefined;
-
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    id: errorMsgDbId ?? crypto.randomUUID(),
-                    role: "status",
-                    content: "",
-                    timestamp: new Date(),
-                    statusInfo,
-                  },
-                ]);
-              }
-            }
-          }
-        } finally {
-          reader.releaseLock();
-        }
+        await streamResponse(convId!, content);
 
         // Refresh sidebar to pick up new title & ordering
         fetchConversations();
@@ -354,7 +362,42 @@ export default function Home() {
         setIsLoading(false);
       }
     },
-    [activeConversationId, fetchConversations, selectedModel]
+    [activeConversationId, fetchConversations, selectedModel, streamResponse]
+  );
+
+  // Retry after a failed response — clean up failed messages and re-stream
+  const handleRetry = useCallback(
+    async (errorMessageId: string) => {
+      if (!activeConversationId) return;
+
+      // Find the last user message (the one we're retrying)
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+      if (!lastUserMsg) return;
+
+      // Remove everything after the last user message from UI
+      const lastUserIdx = messages.findIndex((m) => m.id === lastUserMsg.id);
+      setMessages((prev) => prev.slice(0, lastUserIdx + 1));
+
+      // Clean up failed messages from DB
+      try {
+        await fetch(`/api/conversations/${activeConversationId}/retry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lastUserMessageId: lastUserMsg.id }),
+        });
+      } catch {
+        // Best-effort — continue with retry even if cleanup fails
+      }
+
+      setIsLoading(true);
+      try {
+        await streamResponse(activeConversationId, lastUserMsg.content);
+        fetchConversations();
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [activeConversationId, messages, fetchConversations, streamResponse]
   );
 
   // Handle user question submission — save answers and resolve pending Promise
@@ -418,6 +461,7 @@ export default function Home() {
           isLoading={isLoading}
           onSendMessage={handleSendMessage}
           onQuestionSubmit={handleQuestionSubmit}
+          onRetry={handleRetry}
           model={selectedModel}
           onModelChange={setSelectedModel}
         />

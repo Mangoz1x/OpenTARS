@@ -34,10 +34,12 @@ function renderPlainContent(content: string) {
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  isStreaming?: boolean;
   onQuestionSubmit?: (messageId: string, answers: Record<string, string>) => void;
+  onRetry?: (errorMessageId: string) => void;
 }
 
-export function MessageBubble({ message, onQuestionSubmit }: MessageBubbleProps) {
+export function MessageBubble({ message, isStreaming, onQuestionSubmit, onRetry }: MessageBubbleProps) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -59,7 +61,10 @@ export function MessageBubble({ message, onQuestionSubmit }: MessageBubbleProps)
   if (message.role === "status" && message.statusInfo) {
     return (
       <div className="max-w-[85%]">
-        <StatusMessage status={message.statusInfo} />
+        <StatusMessage
+          status={message.statusInfo}
+          onRetry={onRetry ? () => onRetry(message.id) : undefined}
+        />
       </div>
     );
   }
@@ -79,9 +84,10 @@ export function MessageBubble({ message, onQuestionSubmit }: MessageBubbleProps)
     );
   }
 
-  // assistant — render with full markdown support
+  // Assistant — always rendered through MarkdownRenderer.
+  // .streaming class scopes CSS @starting-style fade-in + cursor to active streaming.
   return (
-    <div className="max-w-[85%] text-sm text-foreground">
+    <div className={`max-w-[85%] text-sm text-foreground ${isStreaming ? "streaming" : ""}`}>
       <MarkdownRenderer content={message.content} />
     </div>
   );

@@ -12,9 +12,10 @@ import {
   ShieldX,
   Zap,
 } from "lucide-react";
+import { isRetryable } from "./types";
 import type { StatusInfo, StatusLevel } from "./types";
 
-const levelStyles: Record<StatusLevel, { bg: string; border: string; icon: string; titleColor: string }> = {
+export const levelStyles: Record<StatusLevel, { bg: string; border: string; icon: string; titleColor: string }> = {
   info: {
     bg: "bg-blue-500/5",
     border: "border-blue-500/20",
@@ -41,7 +42,7 @@ const levelStyles: Record<StatusLevel, { bg: string; border: string; icon: strin
   },
 };
 
-function StatusIcon({ level, errorType }: { level: StatusLevel; errorType?: string }) {
+export function StatusIcon({ level, errorType }: { level: StatusLevel; errorType?: string }) {
   const className = `h-4 w-4 ${levelStyles[level].icon}`;
 
   if (errorType === "error_max_budget_usd") return <DollarSign className={className} />;
@@ -82,9 +83,10 @@ function StopReasonBadge({ reason }: { reason: string }) {
 
 interface StatusMessageProps {
   status: StatusInfo;
+  onRetry?: () => void;
 }
 
-export function StatusMessage({ status }: StatusMessageProps) {
+export function StatusMessage({ status, onRetry }: StatusMessageProps) {
   const styles = levelStyles[status.level];
 
   return (
@@ -118,6 +120,17 @@ export function StatusMessage({ status }: StatusMessageProps) {
                 </span>
               ))}
             </div>
+          )}
+
+          {isRetryable(status) && onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-foreground/10 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/15"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Retry
+            </button>
           )}
         </div>
       </div>
