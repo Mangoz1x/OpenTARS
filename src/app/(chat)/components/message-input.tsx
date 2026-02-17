@@ -8,12 +8,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ArrowUp } from "lucide-react";
+import { ModelSelector } from "./model-selector";
 
 interface MessageInputProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
   disabled?: boolean;
+  model: string;
+  onModelChange: (modelId: string) => void;
 }
 
 export function MessageInput({
@@ -21,6 +24,8 @@ export function MessageInput({
   onChange,
   onSend,
   disabled,
+  model,
+  onModelChange,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -51,32 +56,37 @@ export function MessageInput({
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pb-4">
-      <div className="flex items-end rounded-xl border bg-background p-1 pl-3">
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Message TARS..."
-          disabled={disabled}
-          rows={1}
-          className="block min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm leading-5 text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50 scrollbar-hidden"
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="icon"
-              className="h-8 w-8 shrink-0 rounded-lg"
-              disabled={!value.trim() || disabled}
-              onClick={onSend}
-            >
-              <ArrowUp className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <span className="font-mono text-xs">Enter</span>
-          </TooltipContent>
-        </Tooltip>
+      <div className="rounded-xl border bg-background">
+        <div className="flex items-end p-1 pl-3">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message TARS..."
+            disabled={disabled}
+            rows={1}
+            className="block min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm leading-5 text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed disabled:opacity-50 scrollbar-hidden"
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-lg"
+                disabled={!value.trim() || disabled}
+                onClick={onSend}
+              >
+                <ArrowUp className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <span className="font-mono text-xs">Enter</span>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <div className="flex items-center border-t px-2 py-1">
+          <ModelSelector value={model} onChange={onModelChange} />
+        </div>
       </div>
     </div>
   );

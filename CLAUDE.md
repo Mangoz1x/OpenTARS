@@ -85,6 +85,14 @@ The `docs/` folder is the single source of truth for how the project is built. I
 - Examples: how to use the Anthropic Claude API, third-party integrations, etc.
 - Referenced when building features that depend on these external systems.
 
+## Development Principles
+
+### Chat State = DB State
+All chat state must be persisted to MongoDB. Every message type (user, assistant, status, user-question), every field (answers, statusInfo, agentActivity), and every state change (question answered, etc.) must save to the DB. If it's visible in the UI, it must survive a page reload.
+
+### Bug Fixing Philosophy
+When encountering a bug, **first understand the root cause**. Then redesign around it — don't just patch symptoms. Adding code is not always the solution. Sometimes the implementation was flawed from the beginning and needs to be rethought. Prefer clean rewrites of broken designs over layering workarounds on top.
+
 ## Skills (`.claude/skills/`)
 Custom Claude Code skills for this project. Invocable via `/skill-name` or auto-loaded when relevant.
 - `prompting` — Claude API prompting best practices (roles, XML tags, CoT, chaining, examples, templates). **Consult this before writing any prompt that will be sent to the Claude API.**

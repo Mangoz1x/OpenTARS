@@ -9,7 +9,10 @@
       "Bash(npx shadcn@latest add:*)",
       "Bash(npm run build:*)",
       "Bash(node:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:docs.anthropic.com)"
     ]
   }
 }

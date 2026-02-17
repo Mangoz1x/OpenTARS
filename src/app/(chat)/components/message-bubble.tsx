@@ -1,7 +1,11 @@
 import { AgentActivityCard } from "./agent-activity-card";
+import { MarkdownRenderer } from "./markdown-renderer";
+import { StatusMessage } from "./status-message";
+import { UserQuestionCard } from "./user-question-card";
+import { UserQuestionSkeleton } from "./user-question-skeleton";
 import type { ChatMessage } from "./types";
 
-function renderContent(content: string) {
+function renderPlainContent(content: string) {
   const parts = content.split(/(```[\s\S]*?```)/);
 
   return parts.map((part, i) => {
@@ -13,7 +17,7 @@ function renderContent(content: string) {
       return (
         <pre
           key={i}
-          className="my-2 overflow-x-auto rounded-lg bg-muted p-3 font-mono text-xs"
+          className="my-2 overflow-x-auto rounded-lg bg-primary-foreground/10 p-3 font-mono text-xs"
         >
           <code>{code}</code>
         </pre>
@@ -30,14 +34,15 @@ function renderContent(content: string) {
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  onQuestionSubmit?: (messageId: string, answers: Record<string, string>) => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onQuestionSubmit }: MessageBubbleProps) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
         <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
-          {renderContent(message.content)}
+          {renderPlainContent(message.content)}
         </div>
       </div>
     );
@@ -51,10 +56,33 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     );
   }
 
-  // assistant
+  if (message.role === "status" && message.statusInfo) {
+    return (
+      <div className="max-w-[85%]">
+        <StatusMessage status={message.statusInfo} />
+      </div>
+    );
+  }
+
+  if (message.role === "user-question") {
+    return (
+      <div className="max-w-[85%]">
+        {message.userQuestion ? (
+          <UserQuestionCard
+            question={message.userQuestion}
+            onSubmit={(answers) => onQuestionSubmit?.(message.id, answers)}
+          />
+        ) : (
+          <UserQuestionSkeleton />
+        )}
+      </div>
+    );
+  }
+
+  // assistant — render with full markdown support
   return (
     <div className="max-w-[85%] text-sm text-foreground">
-      {renderContent(message.content)}
+      <MarkdownRenderer content={message.content} />
     </div>
   );
 }

@@ -9,86 +9,24 @@ import { MessageList } from "./message-list";
 import { MessageInput } from "./message-input";
 import type { ChatMessage } from "./types";
 
-const mockMessages: ChatMessage[] = [
-  {
-    id: "1",
-    role: "user",
-    content:
-      "Build me a stock price checker extension. I want to type a ticker symbol and see the current price, daily change, and a small sparkline chart.",
-    timestamp: new Date("2026-02-16T10:00:00"),
-  },
-  {
-    id: "2",
-    role: "assistant",
-    content:
-      "Got it. I'll build a stock price checker extension with ticker lookup, current price, daily change percentage, and a sparkline chart. Let me delegate this to the local agent.",
-    timestamp: new Date("2026-02-16T10:00:05"),
-  },
-  {
-    id: "3",
-    role: "agent-activity",
-    content: "",
-    timestamp: new Date("2026-02-16T10:00:06"),
-    agentActivity: {
-      agentName: "tars-local",
-      taskSummary:
-        "Build stock-checker extension with price display and sparkline chart",
-      status: "completed",
-      startedAt: new Date("2026-02-16T10:00:06"),
-      completedAt: new Date("2026-02-16T10:02:34"),
-      steps: [
-        { label: "Scaffold extension structure", status: "completed" },
-        { label: "Build server.ts with Yahoo Finance API", status: "completed" },
-        { label: "Build component.tsx with sparkline", status: "completed" },
-        { label: "Write manifest and register", status: "completed" },
-      ],
-    },
-  },
-  {
-    id: "4",
-    role: "assistant",
-    content:
-      'Done. The stock checker extension is live. It uses the Yahoo Finance API for real-time data and renders a 30-day sparkline using a lightweight SVG chart. Here\'s what the component looks like:\n\n```tsx\nexport default function StockChecker() {\n  const [ticker, setTicker] = useState("");\n  const [data, setData] = useState<StockData | null>(null);\n\n  return (\n    <div className="flex flex-col gap-4 p-4">\n      <Input\n        placeholder="Enter ticker (e.g. AAPL)"\n        value={ticker}\n        onChange={(e) => setTicker(e.target.value)}\n      />\n      {data && (\n        <div className="flex items-center gap-4">\n          <span className="text-2xl font-bold">${data.price}</span>\n          <Badge variant={data.change > 0 ? "default" : "destructive"}>\n            {data.change > 0 ? "+" : ""}{data.changePercent}%\n          </Badge>\n        </div>\n      )}\n    </div>\n  );\n}\n```\n\nYou can try it now — just type a ticker symbol in the extension panel.',
-    timestamp: new Date("2026-02-16T10:02:35"),
-  },
-];
-
 interface ChatContainerProps {
   onToggleSidebar: () => void;
+  messages: ChatMessage[];
+  isLoading: boolean;
+  onSendMessage: (content: string) => void;
+  onQuestionSubmit?: (messageId: string, answers: Record<string, string>) => void;
+  model: string;
+  onModelChange: (modelId: string) => void;
 }
 
-export function ChatContainer({ onToggleSidebar }: ChatContainerProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(mockMessages);
+export function ChatContainer({ onToggleSidebar, messages, isLoading, onSendMessage, onQuestionSubmit, model, onModelChange }: ChatContainerProps) {
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
 
   const handleSend = useCallback(() => {
     if (!input.trim()) return;
-
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: input.trim(),
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
+    onSendMessage(input.trim());
     setInput("");
-    setIsLoading(true);
-
-    // Simulate a response after a short delay
-    setTimeout(() => {
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content:
-          "I'm not connected to the orchestrator yet — this is a UI preview. Once the backend is wired up, I'll be able to process your requests.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setIsLoading(false);
-    }, 1500);
-  }, [input]);
+  }, [input, onSendMessage]);
 
   const handleSuggestionClick = useCallback((suggestion: string) => {
     setInput(suggestion);
@@ -113,7 +51,7 @@ export function ChatContainer({ onToggleSidebar }: ChatContainerProps) {
 
         {/* Body */}
         {hasMessages ? (
-          <MessageList messages={messages} isLoading={isLoading} />
+          <MessageList messages={messages} isLoading={isLoading} onQuestionSubmit={onQuestionSubmit} />
         ) : (
           <EmptyState onSuggestionClick={handleSuggestionClick} />
         )}
@@ -127,6 +65,8 @@ export function ChatContainer({ onToggleSidebar }: ChatContainerProps) {
                 onChange={setInput}
                 onSend={handleSend}
                 disabled={isLoading}
+                model={model}
+                onModelChange={onModelChange}
               />
             </div>
           </div>
