@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/middleware/withAuth";
 import { withDatabase } from "@/lib/middleware/withDatabase";
 import { Conversation, Message } from "@/lib/db";
 import { runOrchestrator } from "@/lib/orchestrator";
-import type { UserQuestionData } from "@/lib/orchestrator";
+import type { UserQuestionData, Citation } from "@/lib/orchestrator";
 import { buildStopReasonStatus, buildErrorStatus } from "@/lib/status-builders";
 
 const POLL_INTERVAL_MS = 500;
@@ -42,6 +42,8 @@ export const POST = handler(async (request: NextRequest) => {
   // when the model outputs: text -> question -> more text.
   let currentSegment = "";
   const savedAssistantIds: string[] = [];
+  let pendingCitations: Citation[] | null = null;
+  let lastToolDetail: { toolName: string; detail?: string } | null = null;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -67,13 +69,16 @@ export const POST = handler(async (request: NextRequest) => {
           const id = await saveMessage({
             role: "assistant",
             content: currentSegment,
+            ...(pendingCitations?.length ? { citations: pendingCitations } : {}),
           });
           savedAssistantIds.push(id);
           currentSegment = "";
+          pendingCitations = null;
           return id;
         } catch (err) {
           console.error("[route] failed to save assistant segment:", err);
           currentSegment = "";
+          pendingCitations = null;
           return undefined;
         }
       };
@@ -148,6 +153,49 @@ export const POST = handler(async (request: NextRequest) => {
 
             case "user_question_loading":
               send({ type: "user_question_loading" });
+              break;
+
+            case "tool_activity_start": {
+              // Only flush pre-tool text for new active tool calls, not completed status updates
+              let preToolId: string | undefined;
+              if (!event.completed) {
+                preToolId = await flushSegment();
+              }
+              lastToolDetail = { toolName: event.toolName, detail: event.detail };
+              send({
+                type: "tool_activity_start",
+                toolName: event.toolName,
+                detail: event.detail,
+                completed: event.completed,
+                flushedMessageId: preToolId,
+              });
+              break;
+            }
+
+            case "tool_activity_end": {
+              // Save tool-use as its own message in the conversation timeline
+              let toolUseMessageId: string | undefined;
+              if (lastToolDetail) {
+                toolUseMessageId = await saveMessage({
+                  role: "tool-use",
+                  toolUse: lastToolDetail,
+                });
+              }
+              send({
+                type: "tool_activity_end",
+                toolName: event.toolName,
+                toolUseMessageId,
+                toolUse: lastToolDetail,
+              });
+              lastToolDetail = null;
+              // Start new segment for post-tool text
+              send({ type: "segment_break" });
+              break;
+            }
+
+            case "citations":
+              pendingCitations = event.citations;
+              send({ type: "citations", citations: event.citations });
               break;
 
             case "done": {

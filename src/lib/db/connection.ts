@@ -1,9 +1,8 @@
 import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI;
-
 interface CachedConnection {
   promise: Promise<typeof mongoose> | null;
+  uri: string | undefined;
 }
 
 declare global {
@@ -13,12 +12,20 @@ declare global {
 
 const cached: CachedConnection = globalThis.__mongooseCache ?? {
   promise: null,
+  uri: undefined,
 };
 globalThis.__mongooseCache = cached;
 
 export async function connectDB(): Promise<typeof mongoose> {
+  const MONGODB_URI = process.env.MONGODB_URI;
+
   if (!MONGODB_URI) {
     throw new Error("MONGODB_URI environment variable is not set");
+  }
+
+  if (cached.uri !== MONGODB_URI) {
+    cached.promise = null;
+    cached.uri = MONGODB_URI;
   }
 
   if (cached.promise) {
@@ -29,7 +36,7 @@ export async function connectDB(): Promise<typeof mongoose> {
     .connect(MONGODB_URI, {
       bufferCommands: false,
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 15000,
     })
     .then((m) => {
       console.log("[MongoDB] Connected");

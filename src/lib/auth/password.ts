@@ -1,17 +1,19 @@
-import { timingSafeEqual } from "crypto";
+import bcrypt from "bcryptjs";
+import { SiteConfig } from "@/lib/db";
 
-export function verifyPassword(input: string): boolean {
-  const expected = process.env.TARS_PASSWORD;
-  if (!expected) {
-    throw new Error("TARS_PASSWORD environment variable is not set");
-  }
+const BCRYPT_ROUNDS = 12;
 
-  const inputBuffer = Buffer.from(input);
-  const expectedBuffer = Buffer.from(expected);
+export async function verifyPassword(input: string): Promise<boolean> {
+  const config = await SiteConfig.findOne().lean<{ passwordHash: string }>();
+  if (!config) return false;
+  return bcrypt.compare(input, config.passwordHash);
+}
 
-  if (inputBuffer.length !== expectedBuffer.length) {
-    return false;
-  }
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, BCRYPT_ROUNDS);
+}
 
-  return timingSafeEqual(inputBuffer, expectedBuffer);
+export async function isSetupComplete(): Promise<boolean> {
+  const count = await SiteConfig.countDocuments();
+  return count > 0;
 }

@@ -1,4 +1,26 @@
-export type MessageRole = "user" | "assistant" | "agent-activity" | "status" | "user-question";
+export type MessageRole = "user" | "assistant" | "agent-activity" | "status" | "user-question" | "tool-use" | "tool-activity";
+
+export interface Citation {
+  url: string;
+  title: string;
+  citedText?: string;
+}
+
+export interface ToolActivity {
+  toolName: string;
+  detail?: string;
+}
+
+export interface ToolStep {
+  toolName: string;
+  detail?: string;
+  status: "active" | "completed";
+}
+
+export interface ToolUse {
+  toolName: string;
+  detail?: string;
+}
 
 export interface ChatMessage {
   id: string;
@@ -8,6 +30,9 @@ export interface ChatMessage {
   agentActivity?: AgentActivity;
   statusInfo?: StatusInfo;
   userQuestion?: UserQuestion;
+  citations?: Citation[];
+  toolUse?: ToolUse;
+  toolSteps?: ToolStep[];
 }
 
 // --- Stop reasons & error result types ---

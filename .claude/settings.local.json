@@ -13,7 +13,10 @@
       "Bash(curl:*)",
       "Bash(find:*)",
       "WebFetch(domain:docs.anthropic.com)",
-      "Bash(npx next build)"
+      "Bash(npx next build)",
+      "Bash(cat:*)",
+      "Bash(npx tsc:*)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

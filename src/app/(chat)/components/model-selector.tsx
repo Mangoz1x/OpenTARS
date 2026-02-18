@@ -11,8 +11,8 @@ export interface ModelOption {
 
 export const MODELS: ModelOption[] = [
   {
-    id: "claude-sonnet-4-5-20250929",
-    label: "Sonnet 4.5",
+    id: "claude-sonnet-4-6",
+    label: "Sonnet 4.6",
     description: "Fast and capable",
   },
   {

@@ -5,8 +5,8 @@ An autonomous AI agent you interact with through a chat interface. Built with Ne
 ## Prerequisites
 
 - **Node.js** 20 or later
-- **MongoDB** database (local or Atlas)
 - **Anthropic API key**
+- **MongoDB** — either an existing database or a free MongoDB Atlas account (the setup wizard can create one for you)
 
 ## Setup
 
@@ -16,96 +16,34 @@ An autonomous AI agent you interact with through a chat interface. Built with Ne
 npm install
 ```
 
-### 2. Configure environment variables
+### 2. Add your Anthropic API key
 
-Copy the example file and fill in the values:
-
-```bash
-cp .env.example .env.local
-```
-
-Your `.env.local` needs four variables:
+Create a `.env.local` file with your API key:
 
 ```
-TARS_PASSWORD=changeme
-SESSION_SECRET=replace-with-random-32-char-string
-MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/tars?retryWrites=true&w=majority
 ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
-Each one is explained below.
+Get a key from [console.anthropic.com](https://console.anthropic.com/). Navigate to **API Keys** and create a new one.
 
----
-
-### `MONGODB_URI`
-
-TARS stores conversations, messages, and session state in MongoDB.
-
-**Using MongoDB Atlas (free tier):**
-
-1. Go to [mongodb.com/atlas](https://www.mongodb.com/atlas) and create a free account.
-2. Create a new cluster (the free **M0** tier works fine).
-3. In **Database Access**, create a database user with a username and password.
-4. In **Network Access**, add your IP address (or `0.0.0.0/0` for development).
-5. Click **Connect** on your cluster, choose **Drivers**, and copy the connection string.
-6. Replace `<user>`, `<password>`, and `<cluster>` in the URI with your actual values. The database name (`tars` in the example) can be whatever you want.
-
-**Using a local MongoDB instance:**
-
-```
-MONGODB_URI=mongodb://localhost:27017/tars
-```
-
----
-
-### `ANTHROPIC_API_KEY`
-
-This is the API key TARS uses to talk to Claude.
-
-1. Go to [console.anthropic.com](https://console.anthropic.com/).
-2. Sign in or create an account.
-3. Navigate to **API Keys** and create a new key.
-4. Copy the key (starts with `sk-ant-api03-`) and paste it into your `.env.local`.
-
-You'll need credits on your Anthropic account. Check the [pricing page](https://www.anthropic.com/pricing) for details.
-
----
-
-### `SESSION_SECRET`
-
-Used to sign session cookies (JWT-based, HS256). This should be a random string at least 32 characters long.
-
-Generate one with:
-
-```bash
-openssl rand -hex 32
-```
-
-Or on Windows (PowerShell):
-
-```powershell
--join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Max 256) })
-```
-
-Keep this secret. If you change it, all existing sessions are invalidated and users will need to log in again.
-
----
-
-### `TARS_PASSWORD`
-
-TARS is protected by a single shared password. When you open the app, you're prompted to enter this password before you can access the chat. Think of it as a simple lock on the front door -- there are no user accounts.
-
-Set it to whatever you want. Anyone who needs access to your TARS instance needs this password.
-
----
-
-## Run
+### 3. Run the app
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and log in with your `TARS_PASSWORD`.
+Open [http://localhost:3000](http://localhost:3000).
+
+### 4. Complete the setup wizard
+
+On first run, the setup wizard will guide you through:
+
+1. **Database connection** — choose one:
+   - **Auto setup with Atlas** — enter your Atlas API keys and TARS will create a free M0 cluster, database user, and network access automatically. Create API keys at [Atlas → Organization Access → API Keys](https://cloud.mongodb.com/v2#/org/access/apiKeys) with the **Organization Owner** role.
+   - **Manual URI** — paste a `mongodb+srv://` or `mongodb://` connection string from an existing cluster.
+2. **Password** — create a password to secure your instance. Hashed with bcrypt and stored in MongoDB.
+
+The wizard writes `MONGODB_URI` and `SESSION_SECRET` (auto-generated) to `.env.local` for you.
 
 ## Build for production
 

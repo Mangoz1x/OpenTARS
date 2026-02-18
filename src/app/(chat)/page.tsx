@@ -62,6 +62,8 @@ export default function Home() {
           agentActivity: m.agentActivity,
           statusInfo: m.statusInfo,
           userQuestion: m.userQuestion,
+          citations: m.citations,
+          toolUse: m.toolUse,
         }))
       );
     } catch {
@@ -173,6 +175,7 @@ export default function Home() {
       // Mutable: reset on segment_break so post-question text becomes a new message
       let assistantMsgId = crypto.randomUUID();
       let assistantCreated = false;
+      let toolActivityMsgId: string | null = null;
 
       try {
         while (true) {
@@ -280,8 +283,89 @@ export default function Home() {
               });
             }
 
+            // --- Tool activity ---
+            if (event.type === "tool_activity_start") {
+              // Swap optimistic → real DB ID for pre-tool text that was flushed
+              const flushedId = event.flushedMessageId as string | undefined;
+              if (flushedId) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId ? { ...m, id: flushedId } : m
+                  )
+                );
+              }
+
+              const toolName = event.toolName as string;
+              const detail = event.detail as string | undefined;
+              const status = (event.completed ? "completed" : "active") as "completed" | "active";
+              const newStep = { toolName, detail, status };
+
+              if (!toolActivityMsgId) {
+                // First tool step — create the tool-activity message
+                toolActivityMsgId = `tool-activity-${crypto.randomUUID()}`;
+                const id = toolActivityMsgId;
+                setMessages((prev) => [
+                  ...prev,
+                  { id, role: "tool-activity", content: "", timestamp: new Date(), toolSteps: [newStep] },
+                ]);
+              } else {
+                // Update existing tool-activity message
+                const id = toolActivityMsgId;
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== id) return m;
+                    const steps = m.toolSteps || [];
+                    const lastStep = steps[steps.length - 1];
+
+                    // Same tool still active → update its detail (and maybe mark completed)
+                    if (lastStep?.status === "active" && lastStep.toolName === toolName) {
+                      return {
+                        ...m,
+                        toolSteps: [
+                          ...steps.slice(0, -1),
+                          { ...lastStep, detail: detail ?? lastStep.detail, status },
+                        ],
+                      };
+                    }
+
+                    // Different tool or new completed step → append
+                    return { ...m, toolSteps: [...steps, newStep] };
+                  })
+                );
+              }
+            }
+
+            if (event.type === "tool_activity_end") {
+              // Mark the active step as completed on the inline message
+              const id = toolActivityMsgId;
+              if (id) {
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== id) return m;
+                    return {
+                      ...m,
+                      toolSteps: (m.toolSteps || []).map((s) =>
+                        s.status === "active" ? { ...s, status: "completed" as const } : s
+                      ),
+                    };
+                  })
+                );
+              }
+            }
+
+            // --- Citations ---
+            if (event.type === "citations") {
+              const citations = event.citations as ChatMessage["citations"];
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, citations } : m
+                )
+              );
+            }
+
             // --- Segment break: finalize current segment, reset for next ---
             if (event.type === "segment_break") {
+              toolActivityMsgId = null;
               assistantMsgId = crypto.randomUUID();
               assistantCreated = false;
             }

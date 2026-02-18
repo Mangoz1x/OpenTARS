@@ -4,7 +4,7 @@ import { jwtVerify } from "jose";
 
 const COOKIE_NAME = "tars_session";
 
-const publicPaths = ["/login", "/api/auth/"];
+const publicPaths = ["/login", "/api/auth/", "/setup", "/api/setup"];
 
 function isPublicPath(pathname: string): boolean {
   return publicPaths.some((path) => pathname.startsWith(path));
@@ -23,8 +23,13 @@ export async function proxy(request: NextRequest) {
     return handleUnauthenticated(request, pathname);
   }
 
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    return handleUnauthenticated(request, pathname);
+  }
+
   try {
-    const secretKey = new TextEncoder().encode(process.env.SESSION_SECRET);
+    const secretKey = new TextEncoder().encode(secret);
     await jwtVerify(token, secretKey);
     return NextResponse.next();
   } catch {

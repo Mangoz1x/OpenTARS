@@ -1,6 +1,8 @@
 import { AgentActivityCard } from "./agent-activity-card";
 import { MarkdownRenderer } from "./markdown-renderer";
+import { Sources } from "./source-card";
 import { StatusMessage } from "./status-message";
+import { ActivityCard, CompletedToolUse } from "./tool-activity";
 import { UserQuestionCard } from "./user-question-card";
 import { UserQuestionSkeleton } from "./user-question-skeleton";
 import type { ChatMessage } from "./types";
@@ -69,6 +71,22 @@ export function MessageBubble({ message, isStreaming, onQuestionSubmit, onRetry 
     );
   }
 
+  if (message.role === "tool-activity" && message.toolSteps?.length) {
+    return (
+      <div className="max-w-[85%]">
+        <ActivityCard steps={message.toolSteps} />
+      </div>
+    );
+  }
+
+  if (message.role === "tool-use" && message.toolUse) {
+    return (
+      <div className="max-w-[85%]">
+        <CompletedToolUse toolUse={message.toolUse} />
+      </div>
+    );
+  }
+
   if (message.role === "user-question") {
     return (
       <div className="max-w-[85%]">
@@ -89,6 +107,9 @@ export function MessageBubble({ message, isStreaming, onQuestionSubmit, onRetry 
   return (
     <div className={`max-w-[85%] text-sm text-foreground ${isStreaming ? "streaming" : ""}`}>
       <MarkdownRenderer content={message.content} />
+      {message.citations && message.citations.length > 0 && (
+        <Sources citations={message.citations} />
+      )}
     </div>
   );
 }

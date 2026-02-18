@@ -73,6 +73,23 @@ const userQuestionSchema = new Schema(
   { _id: false }
 );
 
+const toolUseSchema = new Schema(
+  {
+    toolName: { type: String, required: true },
+    detail: { type: String },
+  },
+  { _id: false }
+);
+
+const citationSchema = new Schema(
+  {
+    url: { type: String, required: true },
+    title: { type: String, required: true },
+    citedText: { type: String },
+  },
+  { _id: false }
+);
+
 const messageSchema = new Schema({
   conversationId: {
     type: Schema.Types.ObjectId,
@@ -81,7 +98,7 @@ const messageSchema = new Schema({
   },
   role: {
     type: String,
-    enum: ["user", "assistant", "agent-activity", "status", "user-question"],
+    enum: ["user", "assistant", "agent-activity", "status", "user-question", "tool-use"],
     required: true,
   },
   content: { type: String, default: "" },
@@ -89,6 +106,8 @@ const messageSchema = new Schema({
   agentActivity: { type: agentActivitySchema },
   statusInfo: { type: statusInfoSchema },
   userQuestion: { type: userQuestionSchema },
+  citations: { type: [citationSchema] },
+  toolUse: { type: toolUseSchema },
 });
 
 messageSchema.index({ conversationId: 1, timestamp: 1 });

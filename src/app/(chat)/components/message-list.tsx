@@ -49,6 +49,8 @@ function hasVisibleLoader(messages: ChatMessage[]): boolean {
   if (last.role === "assistant") return true;
   // Question skeleton is showing
   if (last.role === "user-question" && !last.userQuestion) return true;
+  // Tool activity with active steps is its own loader
+  if (last.role === "tool-activity" && last.toolSteps?.some((s) => s.status === "active")) return true;
   return false;
 }
 
