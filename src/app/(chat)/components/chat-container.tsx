@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { PanelLeft } from "lucide-react";
+import { PanelLeft, Settings } from "lucide-react";
 import { EmptyState } from "./empty-state";
 import { MessageList } from "./message-list";
 import { MessageInput } from "./message-input";
@@ -48,6 +49,15 @@ export function ChatContainer({ onToggleSidebar, messages, isLoading, onSendMess
           >
             <PanelLeft className="h-4 w-4" />
           </Button>
+        </div>
+
+        {/* Settings link */}
+        <div className="absolute right-3 top-3 z-10">
+          <Link href="/settings">
+            <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Settings className="h-4 w-4" />
+            </Button>
+          </Link>
         </div>
 
         {/* Body */}

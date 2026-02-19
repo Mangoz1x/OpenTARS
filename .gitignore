@@ -36,6 +36,12 @@ yarn-error.log*
 # user data
 userdata/
 
+# agent server
+agent-server/node_modules
+agent-server/dist
+agent-server/.agent-config.json
+agent-server/.env
+
 # vercel
 .vercel
 
