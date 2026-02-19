@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { TARS_SYSTEM_PROMPT } from "./system-prompt";
 import { createMemoryMcpServer } from "@/lib/memory/server";
+import { createAgentsMcpServer } from "@/lib/agents/server";
 import { connectDB, Memory } from "@/lib/db";
 
 export type StopReason =
@@ -56,7 +57,12 @@ const TRACKED_TOOLS: Record<string, [canonical: string, display: string]> = {
   web_search: ["WebSearch", "web_search"],
   WebFetch:   ["WebFetch", "web_fetch"],
   web_fetch:  ["WebFetch", "web_fetch"],
-  "mcp__tars-memory__memory": ["mcp__tars-memory__memory", "memory"],
+  "mcp__tars-memory__memory":          ["mcp__tars-memory__memory", "memory"],
+  "mcp__tars-agents__list_agents":     ["mcp__tars-agents__list_agents", "agents"],
+  "mcp__tars-agents__assign_task":     ["mcp__tars-agents__assign_task", "agents"],
+  "mcp__tars-agents__check_status":    ["mcp__tars-agents__check_status", "agents"],
+  "mcp__tars-agents__get_result":      ["mcp__tars-agents__get_result", "agents"],
+  "mcp__tars-agents__cancel_task":     ["mcp__tars-agents__cancel_task", "agents"],
 };
 
 function resolveToolName(raw: string): { canonical: string; display: string } | null {
@@ -92,6 +98,22 @@ function tryParseToolDetail(canonical: string, jsonStr: string): string | undefi
     if (canonical === "WebFetch" && parsed.url) {
       const host = extractHostname(parsed.url);
       return host ? `Fetching from ${host}` : parsed.url;
+    }
+
+    if (canonical === "mcp__tars-agents__list_agents") return "Listing agents";
+    if (canonical === "mcp__tars-agents__assign_task" && parsed.agent_id) {
+      return parsed.task
+        ? `Assigning to ${parsed.agent_id}`
+        : `Assigning task to ${parsed.agent_id}`;
+    }
+    if (canonical === "mcp__tars-agents__check_status" && parsed.agent_id) {
+      return `Checking status on ${parsed.agent_id}`;
+    }
+    if (canonical === "mcp__tars-agents__get_result" && parsed.agent_id) {
+      return `Getting result from ${parsed.agent_id}`;
+    }
+    if (canonical === "mcp__tars-agents__cancel_task" && parsed.agent_id) {
+      return `Cancelling task on ${parsed.agent_id}`;
     }
 
     if (canonical === "mcp__tars-memory__memory" && parsed.command) {
@@ -189,12 +211,14 @@ async function loadMemoryContext(): Promise<string> {
 export async function* runOrchestrator({
   message,
   sessionId,
+  conversationId,
   model,
   abortController,
   onQuestion,
 }: {
   message: string;
   sessionId?: string;
+  conversationId: string;
   model?: string;
   abortController: AbortController;
   onQuestion: (data: UserQuestionData) => Promise<Record<string, string>>;
@@ -210,6 +234,16 @@ export async function* runOrchestrator({
     return;
   }
 
+  // Tools whose content blocks are done but execution is still pending
+  let pendingToolEndNames: string[] = [];
+
+  const flushPendingToolEnds = function* (): Generator<OrchestratorEvent> {
+    for (const name of pendingToolEndNames) {
+      yield { type: "tool_activity_end", toolName: name };
+    }
+    pendingToolEndNames = [];
+  };
+
   try {
     const memoryContext = await loadMemoryContext();
 
@@ -221,7 +255,10 @@ export async function* runOrchestrator({
         model: model || DEFAULT_MODEL,
         tools: ["AskUserQuestion", "WebSearch", "WebFetch"],
         allowedTools: ["AskUserQuestion", "WebSearch", "WebFetch"],
-        mcpServers: { "tars-memory": createMemoryMcpServer() },
+        mcpServers: {
+          "tars-memory": createMemoryMcpServer(),
+          "tars-agents": createAgentsMcpServer(conversationId),
+        },
         includePartialMessages: true,
         abortController,
         maxTurns: 10,
@@ -243,16 +280,6 @@ export async function* runOrchestrator({
 
     // Active tool use block being streamed
     let activeToolBlock: { name: string; display: string; inputJson: string } | null = null;
-
-    // Tools whose content blocks are done but execution is still pending
-    let pendingToolEndNames: string[] = [];
-
-    const flushPendingToolEnds = function* (): Generator<OrchestratorEvent> {
-      for (const name of pendingToolEndNames) {
-        yield { type: "tool_activity_end", toolName: name };
-      }
-      pendingToolEndNames = [];
-    };
 
     for await (const msg of stream) {
       // --- Session init ---
@@ -327,13 +354,11 @@ export async function* runOrchestrator({
 
       // --- Tool results from SDK (search/fetch completed) ---
       if (msg.type === "user") {
-        const toolResult = (msg as Record<string, unknown>).tool_use_result as
-          | Record<string, unknown>
-          | undefined;
+        const toolResult = (msg as Record<string, unknown>).tool_use_result;
 
-        if (toolResult) {
-          yield* parseSearchResults(toolResult, "web_search");
-          yield* parseFetchResults(toolResult, "web_fetch");
+        if (toolResult && typeof toolResult === "object" && !Array.isArray(toolResult)) {
+          yield* parseSearchResults(toolResult as Record<string, unknown>, "web_search");
+          yield* parseFetchResults(toolResult as Record<string, unknown>, "web_fetch");
         }
       }
 
@@ -363,6 +388,9 @@ export async function* runOrchestrator({
 
       // --- Final result ---
       if (msg.type === "result") {
+        // Flush any tool chips still spinning
+        yield* flushPendingToolEnds();
+
         const resultAny = msg as Record<string, unknown>;
         const resultStopReason =
           (resultAny.stop_reason as StopReason) ?? lastStopReason;
@@ -389,6 +417,8 @@ export async function* runOrchestrator({
       }
     }
   } catch (err) {
+    // Flush any tool chips still spinning
+    yield* flushPendingToolEnds();
     const message =
       err instanceof Error ? err.message : "An unknown error occurred.";
     yield { type: "error", message, errorType: "error_during_execution", stopReason: null };

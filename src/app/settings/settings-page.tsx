@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Bot } from "lucide-react";
+import { ArrowLeft, Bot, ListTodo } from "lucide-react";
 import { AgentList } from "./components/agent-list";
+import { TaskListPanel } from "./components/task-list-panel";
 
 export interface AgentData {
   _id: string;
@@ -25,6 +26,10 @@ export interface AgentData {
     cpus?: number;
     memoryGb?: number;
   };
+  network?: {
+    privateIps?: string[];
+    port?: number;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -35,7 +40,7 @@ export interface ArchetypeData {
   description: string;
 }
 
-type Section = "agents";
+type Section = "agents" | "tasks";
 
 interface SettingsPageProps {
   initialAgents: AgentData[];
@@ -44,6 +49,7 @@ interface SettingsPageProps {
 
 const NAV_ITEMS: { id: Section; label: string; icon: typeof Bot }[] = [
   { id: "agents", label: "Agents", icon: Bot },
+  { id: "tasks", label: "Tasks", icon: ListTodo },
 ];
 
 export default function SettingsPage({ initialAgents, archetypes }: SettingsPageProps) {
@@ -86,6 +92,7 @@ export default function SettingsPage({ initialAgents, archetypes }: SettingsPage
           {activeSection === "agents" && (
             <AgentList agents={agents} setAgents={setAgents} archetypes={archetypes} />
           )}
+          {activeSection === "tasks" && <TaskListPanel />}
         </div>
       </div>
     </div>

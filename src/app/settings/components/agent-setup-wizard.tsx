@@ -62,8 +62,10 @@ export function AgentSetupWizard({ open, onOpenChange, archetypes, onAgentAdded 
   // Step 3: Verify
   const [agentUrl, setAgentUrl] = useState("");
   const [verifying, setVerifying] = useState(false);
+  const [autoVerifying, setAutoVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<"success" | "error" | null>(null);
   const [registeredAgent, setRegisteredAgent] = useState<AgentData | null>(null);
+  const [showManualInput, setShowManualInput] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -80,8 +82,10 @@ export function AgentSetupWizard({ open, onOpenChange, archetypes, onAgentAdded 
         setError("");
         setAgentUrl("");
         setVerifying(false);
+        setAutoVerifying(false);
         setVerifyResult(null);
         setRegisteredAgent(null);
+        setShowManualInput(false);
       }, 200);
       return () => clearTimeout(t);
     }
@@ -92,6 +96,49 @@ export function AgentSetupWizard({ open, onOpenChange, archetypes, onAgentAdded 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
+  }, []);
+
+  // Try each discovered IP via the verify-url endpoint
+  const autoVerifyIps = useCallback(async (agent: AgentData) => {
+    const ips = agent.network?.privateIps;
+    const port = agent.network?.port;
+    if (!ips?.length || !port) {
+      setShowManualInput(true);
+      return;
+    }
+
+    setAutoVerifying(true);
+    setError("");
+
+    for (const ip of ips) {
+      const candidateUrl = `http://${ip}:${port}`;
+      try {
+        const res = await fetch(`/api/agents/${agent._id}/verify-url`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: candidateUrl }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          setAgentUrl(data.url);
+          setVerifyResult("success");
+          // Re-fetch agent with updated URL
+          const agentRes = await fetch(`/api/agents/${agent._id}`);
+          const agentData = await agentRes.json();
+          setRegisteredAgent(agentData.agent);
+          setAutoVerifying(false);
+          return;
+        }
+      } catch {
+        // try next IP
+      }
+    }
+
+    // None worked — fall back to manual input
+    setAutoVerifying(false);
+    setAgentUrl(`http://${ips[0]}:${port}`);
+    setShowManualInput(true);
+    setError("Could not auto-detect a reachable IP. Enter the URL manually.");
   }, []);
 
   // Poll for agent registration
@@ -106,14 +153,15 @@ export function AgentSetupWizard({ open, onOpenChange, archetypes, onAgentAdded 
         if (data.registered && data.agent) {
           if (pollRef.current) clearInterval(pollRef.current);
           setRegisteredAgent(data.agent);
-          setAgentUrl(data.agent.url || "");
           setStep("verify");
+          // Auto-try discovered IPs
+          autoVerifyIps(data.agent);
         }
       } catch {
         // silently retry next interval
       }
     }, 3000);
-  }, []);
+  }, [autoVerifyIps]);
 
   function toggleArchetype(id: string) {
     setSelectedArchetypes((prev) =>
@@ -167,16 +215,15 @@ export function AgentSetupWizard({ open, onOpenChange, archetypes, onAgentAdded 
 
     try {
       if (registeredAgent) {
-        await fetch(`/api/agents/${registeredAgent._id}`, {
-          method: "PATCH",
+        const res = await fetch(`/api/agents/${registeredAgent._id}/verify-url`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url }),
         });
+        const data = await res.json();
 
-        const healthRes = await fetch(`/api/agents/${registeredAgent._id}/health`);
-        const healthData = await healthRes.json();
-
-        if (healthData.isOnline) {
+        if (data.success) {
+          setAgentUrl(data.url);
           setVerifyResult("success");
           const agentRes = await fetch(`/api/agents/${registeredAgent._id}`);
           const agentData = await agentRes.json();
@@ -335,7 +382,7 @@ export function AgentSetupWizard({ open, onOpenChange, archetypes, onAgentAdded 
                 <ArrowLeft className="mr-1 h-4 w-4" />
                 Back
               </Button>
-              <Button variant="outline" onClick={() => setStep("verify")}>
+              <Button variant="outline" onClick={() => { setStep("verify"); setShowManualInput(true); }}>
                 Skip to Verify
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Button>
@@ -355,26 +402,39 @@ export function AgentSetupWizard({ open, onOpenChange, archetypes, onAgentAdded 
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="agent-url">Agent URL</Label>
-              <Input
-                id="agent-url"
-                value={agentUrl}
-                onChange={(e) => {
-                  setAgentUrl(e.target.value);
-                  setVerifyResult(null);
-                  setError("");
-                }}
-                placeholder="e.g. http://192.168.1.100:4001"
-                autoFocus
-              />
-            </div>
+            {/* Auto-verifying state */}
+            {autoVerifying && (
+              <div className="flex items-center gap-2 rounded-md border border-dashed p-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  Detecting reachable IP...
+                </span>
+              </div>
+            )}
+
+            {/* Manual URL input — shown if auto-verify failed or skipped */}
+            {!autoVerifying && showManualInput && (
+              <div className="space-y-2">
+                <Label htmlFor="agent-url">Agent URL</Label>
+                <Input
+                  id="agent-url"
+                  value={agentUrl}
+                  onChange={(e) => {
+                    setAgentUrl(e.target.value);
+                    setVerifyResult(null);
+                    setError("");
+                  }}
+                  placeholder="e.g. http://192.168.1.100:4001"
+                  autoFocus
+                />
+              </div>
+            )}
 
             {verifyResult === "success" && (
               <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
                 <span className="text-sm text-emerald-600 dark:text-emerald-400">
-                  Connection verified! Agent is online.
+                  Connection verified! Agent is online at {agentUrl}
                 </span>
               </div>
             )}
@@ -394,7 +454,7 @@ export function AgentSetupWizard({ open, onOpenChange, archetypes, onAgentAdded 
               {verifyResult === "success" ? (
                 <Button onClick={handleDone}>Done</Button>
               ) : (
-                <Button onClick={handleVerify} disabled={verifying}>
+                <Button onClick={handleVerify} disabled={verifying || autoVerifying}>
                   {verifying ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />

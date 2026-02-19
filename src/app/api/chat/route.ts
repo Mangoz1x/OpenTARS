@@ -40,6 +40,7 @@ export const POST = handler(async (request: NextRequest) => {
   // Tracks content segments between tool calls.
   // Each segment becomes a separate assistant message so ordering stays correct
   // when the model outputs: text -> question -> more text.
+  const streamStartTime = new Date();
   let currentSegment = "";
   const savedAssistantIds: string[] = [];
   let pendingCitations: Citation[] | null = null;
@@ -134,6 +135,7 @@ export const POST = handler(async (request: NextRequest) => {
         for await (const event of runOrchestrator({
           message,
           sessionId,
+          conversationId,
           model,
           abortController,
           onQuestion,
@@ -201,6 +203,20 @@ export const POST = handler(async (request: NextRequest) => {
             case "done": {
               // Save any remaining text (post-question text, or entire response if no questions)
               const finalAssistantId = await flushSegment();
+
+              // Bump agent-activity messages created during THIS stream so they
+              // sort after the assistant/tool-use messages that precede them.
+              // Only matches messages with a timestamp >= streamStartTime so
+              // subsequent streams (e.g. auto-response) don't re-bump old cards.
+              await Message.updateMany(
+                {
+                  conversationId,
+                  role: "agent-activity",
+                  "agentActivity.status": "running",
+                  timestamp: { $gte: streamStartTime },
+                },
+                { $set: { timestamp: new Date() } }
+              );
 
               // Build status info for non-normal stop reasons
               const statusInfo = buildStopReasonStatus(event.stopReason);

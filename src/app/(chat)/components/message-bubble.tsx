@@ -39,9 +39,10 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   onQuestionSubmit?: (messageId: string, answers: Record<string, string>) => void;
   onRetry?: (errorMessageId: string) => void;
+  onTaskComplete?: (taskId: string, data: { status: string; result: string | null; error: string | null }) => void;
 }
 
-export function MessageBubble({ message, isStreaming, onQuestionSubmit, onRetry }: MessageBubbleProps) {
+export function MessageBubble({ message, isStreaming, onQuestionSubmit, onRetry, onTaskComplete }: MessageBubbleProps) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
@@ -55,7 +56,7 @@ export function MessageBubble({ message, isStreaming, onQuestionSubmit, onRetry 
   if (message.role === "agent-activity" && message.agentActivity) {
     return (
       <div className="max-w-[85%]">
-        <AgentActivityCard activity={message.agentActivity} />
+        <AgentActivityCard activity={message.agentActivity} onTaskComplete={onTaskComplete} />
       </div>
     );
   }

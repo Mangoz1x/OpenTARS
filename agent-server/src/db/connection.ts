@@ -19,10 +19,6 @@ export async function connectDB(uri: string): Promise<typeof mongoose> {
       maxPoolSize: 5,
       serverSelectionTimeoutMS: 15000,
     })
-    .then((m) => {
-      console.log("[MongoDB] Connected");
-      return m;
-    })
     .catch((err) => {
       connectionPromise = null;
       throw err;

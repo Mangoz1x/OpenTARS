@@ -104,12 +104,18 @@ export interface UserQuestion {
 // --- Agent activity (existing) ---
 
 export interface AgentActivity {
+  agentId?: string;
   agentName: string;
+  taskId?: string;
   taskSummary: string;
   status: "running" | "completed" | "failed";
   steps: AgentStep[];
   startedAt: Date;
   completedAt?: Date;
+  turnsCompleted?: number;
+  lastActivity?: string;
+  costUsd?: number;
+  result?: string;
 }
 
 export interface AgentStep {

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import type { AgentServerConfig } from "../config.js";
 import type { TaskManager } from "../task-manager.js";
 import { runTask } from "../task-runner.js";
+import { log } from "../logger.js";
 
 const createTaskSchema = z.object({
   prompt: z.string().min(1),
@@ -61,7 +62,7 @@ export function createTaskRouter(
 
     // Fire and forget — run task in background
     runTask(managed, body, taskManager, config).catch((err) => {
-      console.error(`[Task ${managed.taskId}] Unhandled error:`, err);
+      log.error(`Task ${managed.taskId} unhandled error: ${err}`);
     });
 
     res.status(201).json({

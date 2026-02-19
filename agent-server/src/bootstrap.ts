@@ -1,6 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { log } from "./logger.js";
+import { getPrivateIps } from "./network.js";
 
 const CONFIG_FILE = path.join(process.cwd(), ".agent-config.json");
 
@@ -10,6 +12,7 @@ export interface AgentConfig {
   authToken: string;
   mongodbUri: string;
   anthropicApiKey: string;
+  tarsUrl?: string;
 }
 
 /**
@@ -32,7 +35,7 @@ async function saveConfig(config: AgentConfig): Promise<void> {
   await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
   // Restrict permissions to owner only
   await fs.chmod(CONFIG_FILE, 0o600);
-  console.log(`[Bootstrap] Config saved to ${CONFIG_FILE}`);
+  log.dim(`Config saved to ${CONFIG_FILE}`);
 }
 
 /**
@@ -42,7 +45,7 @@ async function registerWithToken(
   tarsUrl: string,
   setupToken: string
 ): Promise<AgentConfig> {
-  console.log(`[Bootstrap] Registering with TARS at ${tarsUrl}...`);
+  log.dim(`Registering with TARS at ${tarsUrl}...`);
 
   const response = await fetch(`${tarsUrl}/api/agents/register`, {
     method: "POST",
@@ -53,6 +56,8 @@ async function registerWithToken(
       os: process.platform,
       cpus: os.cpus().length,
       memoryGb: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
+      privateIps: getPrivateIps(),
+      port: parseInt(process.env.PORT ?? "4001", 10),
     }),
   });
 
@@ -88,17 +93,20 @@ async function registerWithToken(
  * 2. TARS_SETUP_TOKEN + TARS_URL — one-time registration flow
  * 3. Manual env vars (MONGODB_URI, ANTHROPIC_API_KEY, etc.) — fallback
  */
-export async function bootstrap(): Promise<AgentConfig> {
+export async function bootstrap(
+  opts: { silent?: boolean } = {}
+): Promise<AgentConfig> {
   // 1. Check for saved config
   const saved = await loadSavedConfig();
   if (saved) {
-    console.log(`[Bootstrap] Loaded config for agent: ${saved.agentId}`);
+    if (!opts.silent) log.success(`Loaded config for agent: ${saved.agentId}`);
     // Inject into process.env so the rest of the app can use them
     process.env.ANTHROPIC_API_KEY = saved.anthropicApiKey;
     process.env.MONGODB_URI = saved.mongodbUri;
     process.env.AGENT_AUTH_TOKEN = saved.authToken;
     process.env.AGENT_ID = saved.agentId;
     process.env.AGENT_NAME = saved.agentName;
+    if (saved.tarsUrl) process.env.TARS_URL = saved.tarsUrl;
     return saved;
   }
 
@@ -107,7 +115,9 @@ export async function bootstrap(): Promise<AgentConfig> {
   const tarsUrl = process.env.TARS_URL;
 
   if (setupToken && tarsUrl) {
-    const config = await registerWithToken(tarsUrl.replace(/\/$/, ""), setupToken);
+    const normalizedUrl = tarsUrl.replace(/\/$/, "");
+    const config = await registerWithToken(normalizedUrl, setupToken);
+    config.tarsUrl = normalizedUrl;
     await saveConfig(config);
 
     // Inject into process.env
@@ -116,14 +126,15 @@ export async function bootstrap(): Promise<AgentConfig> {
     process.env.AGENT_AUTH_TOKEN = config.authToken;
     process.env.AGENT_ID = config.agentId;
     process.env.AGENT_NAME = config.agentName;
+    process.env.TARS_URL = normalizedUrl;
 
-    console.log(`[Bootstrap] Registered as: ${config.agentId} (${config.agentName})`);
+    if (!opts.silent) log.success(`Registered as: ${config.agentId} (${config.agentName})`);
     return config;
   }
 
   // 3. Manual env fallback
   if (process.env.MONGODB_URI && process.env.ANTHROPIC_API_KEY && process.env.AGENT_AUTH_TOKEN) {
-    console.log("[Bootstrap] Using manual env configuration");
+    if (!opts.silent) log.success("Using manual env configuration");
     return {
       agentId: process.env.AGENT_ID ?? `agent-${os.hostname()}`,
       agentName: process.env.AGENT_NAME ?? "TARS Agent",
@@ -133,10 +144,5 @@ export async function bootstrap(): Promise<AgentConfig> {
     };
   }
 
-  throw new Error(
-    "No configuration found. Either:\n" +
-      "  1. Set TARS_SETUP_TOKEN and TARS_URL for automatic registration\n" +
-      "  2. Set MONGODB_URI, ANTHROPIC_API_KEY, and AGENT_AUTH_TOKEN manually\n" +
-      "  3. Run the agent once with a setup token to save config locally"
-  );
+  throw new Error("No configuration found");
 }

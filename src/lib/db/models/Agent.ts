@@ -10,6 +10,14 @@ const machineSchema = new Schema(
   { _id: false }
 );
 
+const networkSchema = new Schema(
+  {
+    privateIps: { type: [String], default: [] },
+    port: { type: Number },
+  },
+  { _id: false }
+);
+
 const agentSchema = new Schema(
   {
     _id: { type: String },
@@ -26,6 +34,7 @@ const agentSchema = new Schema(
     isOnline: { type: Boolean, default: false },
     lastHeartbeat: { type: Date },
     machine: { type: machineSchema },
+    network: { type: networkSchema },
   },
   { timestamps: true }
 );

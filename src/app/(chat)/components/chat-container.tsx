@@ -17,11 +17,12 @@ interface ChatContainerProps {
   onSendMessage: (content: string) => void;
   onQuestionSubmit?: (messageId: string, answers: Record<string, string>) => void;
   onRetry?: (errorMessageId: string) => void;
+  onTaskComplete?: (taskId: string, data: { status: string; result: string | null; error: string | null }) => void;
   model: string;
   onModelChange: (modelId: string) => void;
 }
 
-export function ChatContainer({ onToggleSidebar, messages, isLoading, onSendMessage, onQuestionSubmit, onRetry, model, onModelChange }: ChatContainerProps) {
+export function ChatContainer({ onToggleSidebar, messages, isLoading, onSendMessage, onQuestionSubmit, onRetry, onTaskComplete, model, onModelChange }: ChatContainerProps) {
   const [input, setInput] = useState("");
 
   const handleSend = useCallback(() => {
@@ -62,7 +63,7 @@ export function ChatContainer({ onToggleSidebar, messages, isLoading, onSendMess
 
         {/* Body */}
         {hasMessages ? (
-          <MessageList messages={messages} isLoading={isLoading} onQuestionSubmit={onQuestionSubmit} onRetry={onRetry} />
+          <MessageList messages={messages} isLoading={isLoading} onQuestionSubmit={onQuestionSubmit} onRetry={onRetry} onTaskComplete={onTaskComplete} />
         ) : (
           <EmptyState onSuggestionClick={handleSuggestionClick} />
         )}

@@ -9,6 +9,7 @@ export interface AgentServerConfig {
   defaultModel: string;
   maxBudgetUsd: number;
   maxTurns: number;
+  tarsUrl?: string;
 }
 
 export function loadConfig(): AgentServerConfig {
@@ -35,5 +36,6 @@ export function loadConfig(): AgentServerConfig {
     defaultModel: process.env.DEFAULT_MODEL ?? "claude-sonnet-4-6",
     maxBudgetUsd: parseFloat(process.env.MAX_BUDGET_USD ?? "10.00"),
     maxTurns: parseInt(process.env.MAX_TURNS ?? "100", 10),
+    tarsUrl: process.env.TARS_URL || undefined,
   };
 }

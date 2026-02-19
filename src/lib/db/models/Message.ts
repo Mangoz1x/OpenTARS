@@ -26,6 +26,10 @@ const agentActivitySchema = new Schema(
     steps: { type: [agentStepSchema], default: [] },
     startedAt: { type: Date, required: true },
     completedAt: { type: Date },
+    turnsCompleted: { type: Number },
+    lastActivity: { type: String },
+    costUsd: { type: Number },
+    result: { type: String },
   },
   { _id: false }
 );

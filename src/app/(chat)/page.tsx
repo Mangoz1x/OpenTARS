@@ -8,6 +8,14 @@ import type { ChatMessage, StopReason, UserQuestion } from "./components/types";
 import { buildErrorStatus } from "@/lib/status-builders";
 import { MODELS } from "./components/model-selector";
 
+interface TaskTerminalData {
+  status: string;
+  result: string | null;
+  error: string | null;
+}
+
+type TaskCompleteHandler = (taskId: string, data: TaskTerminalData) => void;
+
 const SIDEBAR_WIDTH = 260;
 
 interface ConversationItem {
@@ -30,6 +38,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const streamActiveRef = useRef(false);
+  const handledTasksRef = useRef(new Set<string>());
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
@@ -487,6 +496,9 @@ export default function Home() {
           streamActiveRef.current = false;
         }
 
+        // Re-fetch messages to pick up any agent-activity messages created by MCP tools
+        await fetchMessages(convId!);
+
         // Refresh sidebar to pick up new title & ordering
         fetchConversations();
       } finally {
@@ -524,13 +536,14 @@ export default function Home() {
       streamActiveRef.current = true;
       try {
         await streamResponse(activeConversationId, lastUserMsg.content);
+        await fetchMessages(activeConversationId);
         fetchConversations();
       } finally {
         streamActiveRef.current = false;
         setIsLoading(false);
       }
     },
-    [activeConversationId, messages, fetchConversations, streamResponse]
+    [activeConversationId, messages, fetchConversations, fetchMessages, streamResponse]
   );
 
   // Handle user question submission — save answers and unblock the model.
@@ -569,6 +582,59 @@ export default function Home() {
     [activeConversationId]
   );
 
+  // Handle task completion — claim the auto-response, then stream orchestrator summary.
+  // `liveData` comes from polling the agent server directly so it's always fresh,
+  // whereas the TARS Task doc may not be updated yet (webhook race condition).
+  const handleTaskComplete: TaskCompleteHandler = useCallback(
+    async (taskId: string, liveData: TaskTerminalData) => {
+      // Client-side dedup: skip if already handled this task
+      if (handledTasksRef.current.has(taskId)) return;
+      handledTasksRef.current.add(taskId);
+
+      // Don't auto-respond if a stream is already active or loading
+      if (streamActiveRef.current || isLoading) return;
+
+      const convId = activeConversationId;
+      if (!convId) return;
+
+      // Server-side atomic dedup: only one tab/reload can claim this
+      try {
+        const claimRes = await fetch(`/api/tasks/${taskId}/claim-response`, {
+          method: "POST",
+        });
+        const claimData = await claimRes.json();
+        if (!claimData.claimed) return;
+
+        // Prefer live polling data over TARS Task doc (which may lag behind webhook)
+        const result = liveData.result ?? claimData.result;
+        const error = liveData.error ?? claimData.error;
+        const status = liveData.status ?? claimData.status;
+
+        const taskContext =
+          `[SYSTEM] Agent "${claimData.agentName}" finished task "${claimData.summary}". ` +
+          `Status: ${status}. ` +
+          (result
+            ? `Result:\n${result}`
+            : error
+              ? `Error:\n${error}`
+              : "No result returned.");
+
+        setIsLoading(true);
+        streamActiveRef.current = true;
+        try {
+          await streamResponse(convId, taskContext);
+          await fetchMessages(convId);
+        } finally {
+          streamActiveRef.current = false;
+          setIsLoading(false);
+        }
+      } catch {
+        // Best-effort — the task card already shows the final status
+      }
+    },
+    [activeConversationId, isLoading, streamResponse, fetchMessages]
+  ) as TaskCompleteHandler;
+
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
       {/* Sidebar */}
@@ -599,6 +665,7 @@ export default function Home() {
           onSendMessage={handleSendMessage}
           onQuestionSubmit={handleQuestionSubmit}
           onRetry={handleRetry}
+          onTaskComplete={handleTaskComplete}
           model={selectedModel}
           onModelChange={setSelectedModel}
         />

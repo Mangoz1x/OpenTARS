@@ -67,7 +67,11 @@ export function AgentCard({ agent, archetypes, onUpdate, onDelete }: AgentCardPr
                 </Badge>
               )}
             </div>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{agent.url}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {agent.url === "http://pending" && agent.network?.privateIps?.length
+                ? `Detected: ${agent.network.privateIps.map((ip) => `${ip}:${agent.network?.port ?? "4001"}`).join(", ")}`
+                : agent.url}
+            </p>
           </div>
           <Badge
             variant={agent.isOnline ? "default" : "secondary"}

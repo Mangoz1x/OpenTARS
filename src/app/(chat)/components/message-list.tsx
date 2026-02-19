@@ -59,9 +59,10 @@ interface MessageListProps {
   isLoading: boolean;
   onQuestionSubmit?: (messageId: string, answers: Record<string, string>) => void;
   onRetry?: (errorMessageId: string) => void;
+  onTaskComplete?: (taskId: string, data: { status: string; result: string | null; error: string | null }) => void;
 }
 
-export function MessageList({ messages, isLoading, onQuestionSubmit, onRetry }: MessageListProps) {
+export function MessageList({ messages, isLoading, onQuestionSubmit, onRetry, onTaskComplete }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const renderItems = useMemo(() => groupMessages(messages), [messages]);
@@ -94,6 +95,7 @@ export function MessageList({ messages, isLoading, onQuestionSubmit, onRetry }: 
               isStreaming={item.message.id === streamingId}
               onQuestionSubmit={onQuestionSubmit}
               onRetry={onRetry}
+              onTaskComplete={onTaskComplete}
             />
           );
         })}

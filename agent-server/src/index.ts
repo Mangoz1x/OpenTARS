@@ -6,18 +6,23 @@ import { authMiddleware } from "./auth.js";
 import { TaskManager } from "./task-manager.js";
 import { createTaskRouter } from "./routes/tasks.js";
 import { createAgentRouter } from "./routes/agent.js";
+import { log, printBanner, printStartupError } from "./logger.js";
+import { startHeartbeat, stopHeartbeat } from "./heartbeat.js";
+import { getPrivateIps } from "./network.js";
 
 async function main() {
+  printBanner();
+
   // Bootstrap: load config from saved file, setup token, or env vars
-  console.log("[Agent Server] Bootstrapping...");
   await bootstrap();
 
   // Now env vars are populated — load structured config
   const config = loadConfig();
 
   // Connect to MongoDB
-  console.log("[Agent Server] Connecting to MongoDB...");
+  log.dim("Connecting to MongoDB...");
   await connectDB(config.mongodbUri);
+  log.success("Connected to MongoDB");
 
   const taskManager = new TaskManager(config);
 
@@ -29,17 +34,27 @@ async function main() {
   app.use("/agent", createAgentRouter(taskManager, config));
 
   app.listen(config.port, () => {
-    console.log(`[Agent Server] Running on port ${config.port}`);
-    console.log(`[Agent Server] Agent ID: ${config.agentId}`);
-    console.log(`[Agent Server] Model: ${config.defaultModel}`);
+    log.success(`Running on port ${config.port}`);
+    log.detail("Agent ID:", config.agentId);
+    log.detail("Model:   ", config.defaultModel);
+
+    const ips = getPrivateIps();
+    if (ips.length > 0) {
+      log.detail("Private IP:", ips.join(", "));
+    }
+
+    startHeartbeat(config.agentId, config.port);
+    console.log();
   });
 
   // Graceful shutdown
   const shutdown = async () => {
-    console.log("\n[Agent Server] Shutting down...");
+    console.log();
+    log.dim("Shutting down...");
+    await stopHeartbeat(config.agentId);
     const activeId = taskManager.getActiveTaskId();
     if (activeId) {
-      console.log(`[Agent Server] Cancelling active task: ${activeId}`);
+      log.warn(`Cancelling active task: ${activeId}`);
       await taskManager.cancelTask(activeId);
     }
     process.exit(0);
@@ -50,6 +65,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("[Agent Server] Failed to start:", err);
+  printStartupError(err);
   process.exit(1);
 });

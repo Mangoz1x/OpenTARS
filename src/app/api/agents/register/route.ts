@@ -14,20 +14,33 @@ const handler = compose(withDatabase);
  */
 export const POST = handler(async (request: NextRequest) => {
   const body = await request.json();
-  const { token, hostname, os: agentOs, cpus, memoryGb } = body;
+  const { token, hostname, os: agentOs, cpus, memoryGb, privateIps, port } = body;
 
   if (!token) {
     return Response.json({ error: "Setup token is required" }, { status: 400 });
   }
 
   // Validate the token
-  const setupToken = await SetupToken.findOne({ token, used: false });
+  const setupToken = await SetupToken.findOne({ token });
   if (!setupToken) {
-    return Response.json({ error: "Invalid or expired setup token" }, { status: 401 });
+    return Response.json(
+      { error: "Setup token not found — it may have expired. Generate a new one from TARS settings." },
+      { status: 401 }
+    );
+  }
+
+  if (setupToken.used) {
+    return Response.json(
+      { error: "This setup token has already been used. Generate a new one from TARS settings." },
+      { status: 401 }
+    );
   }
 
   if (new Date() > setupToken.expiresAt) {
-    return Response.json({ error: "Setup token has expired" }, { status: 401 });
+    return Response.json(
+      { error: "This setup token has expired. Generate a new one from TARS settings." },
+      { status: 401 }
+    );
   }
 
   // Generate agent credentials
@@ -49,7 +62,7 @@ export const POST = handler(async (request: NextRequest) => {
   await Agent.create({
     _id: agentId,
     name: setupToken.agentName,
-    url: "", // Will be updated when agent reports its URL
+    url: "http://pending", // Placeholder — updated when agent verifies connection
     apiKey: authToken,
     archetypes: setupToken.archetypes,
     preferredArchetype: setupToken.archetypes[0],
@@ -60,6 +73,10 @@ export const POST = handler(async (request: NextRequest) => {
       os: agentOs ?? "unknown",
       cpus: cpus ?? 0,
       memoryGb: memoryGb ?? 0,
+    },
+    network: {
+      privateIps: privateIps ?? [],
+      port: port ?? 4001,
     },
   });
 

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { Task } from "./db/models/Task.js";
 import { TaskEventBus } from "./event-bus.js";
+import { notifyTars } from "./webhook.js";
 import type { CreateTaskRequest, TaskStatus } from "./types.js";
 import type { AgentServerConfig } from "./config.js";
 
@@ -84,9 +85,20 @@ export class TaskManager {
       },
     });
 
+    notifyTars(this.config, {
+      taskId,
+      status,
+      result,
+      stopReason,
+      costUsd,
+      turnsCompleted,
+      filesModified,
+    });
+
     const managed = this.activeTasks.get(taskId);
     if (managed) {
       managed.eventBus.close();
+      this.activeTasks.delete(taskId);
     }
   }
 
@@ -99,9 +111,12 @@ export class TaskManager {
       },
     });
 
+    notifyTars(this.config, { taskId, status: "failed", error });
+
     const managed = this.activeTasks.get(taskId);
     if (managed) {
       managed.eventBus.close();
+      this.activeTasks.delete(taskId);
     }
   }
 
@@ -118,6 +133,9 @@ export class TaskManager {
       },
     });
 
+    notifyTars(this.config, { taskId, status: "cancelled" });
+
     managed.eventBus.close();
+    this.activeTasks.delete(taskId);
   }
 }

@@ -25,6 +25,7 @@ export const GET = handler(async (_request, context) => {
     const timeout = setTimeout(() => controller.abort(), 5000);
 
     const res = await fetch(`${agent.url}/agent/health`, {
+      headers: agent.apiKey ? { Authorization: `Bearer ${agent.apiKey}` } : {},
       signal: controller.signal,
     });
     clearTimeout(timeout);

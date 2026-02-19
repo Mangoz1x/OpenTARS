@@ -4,7 +4,7 @@ import { jwtVerify } from "jose";
 
 const COOKIE_NAME = "tars_session";
 
-const publicPaths = ["/login", "/api/auth/", "/setup", "/api/setup"];
+const publicPaths = ["/login", "/api/auth/", "/setup", "/api/setup", "/api/agents/register", "/api/agents/tasks/webhook"];
 
 function isPublicPath(pathname: string): boolean {
   return publicPaths.some((path) => pathname.startsWith(path));

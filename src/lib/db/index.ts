@@ -6,3 +6,4 @@ export { Message, type IMessage } from "./models/Message";
 export { SiteConfig, type ISiteConfig } from "./models/SiteConfig";
 export { Memory, type IMemory } from "./models/Memory";
 export { SetupToken, type ISetupToken } from "./models/SetupToken";
+export { Task, type ITask } from "./models/Task";

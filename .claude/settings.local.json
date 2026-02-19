@@ -18,7 +18,9 @@
       "Bash(npx tsc:*)",
       "mcp__ide__getDiagnostics",
       "Bash(/Users/ryanfotovat/Desktop/Sandbox/NextJS/OpenTARS/agent-server/node_modules/.bin/tsc:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(printf:*)",
+      "Bash(npx tsx:*)"
     ]
   }
 }
