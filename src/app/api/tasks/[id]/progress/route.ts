@@ -67,6 +67,7 @@ export async function GET(
       costUsd: live.costUsd ?? stale.costUsd,
       result: live.result ?? stale.result,
       error: live.error ?? stale.error,
+      activities: (live.activities as string[]) ?? [],
     });
   } catch {
     // Agent unreachable — return stale data

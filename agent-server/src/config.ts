@@ -10,6 +10,7 @@ export interface AgentServerConfig {
   maxBudgetUsd: number;
   maxTurns: number;
   tarsUrl?: string;
+  debug: boolean;
 }
 
 export function loadConfig(): AgentServerConfig {
@@ -37,5 +38,6 @@ export function loadConfig(): AgentServerConfig {
     maxBudgetUsd: parseFloat(process.env.MAX_BUDGET_USD ?? "10.00"),
     maxTurns: parseInt(process.env.MAX_TURNS ?? "100", 10),
     tarsUrl: process.env.TARS_URL || undefined,
+    debug: process.env.DEBUG === "true",
   };
 }

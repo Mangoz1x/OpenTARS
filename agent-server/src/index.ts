@@ -6,7 +6,7 @@ import { authMiddleware } from "./auth.js";
 import { TaskManager } from "./task-manager.js";
 import { createTaskRouter } from "./routes/tasks.js";
 import { createAgentRouter } from "./routes/agent.js";
-import { log, printBanner, printStartupError } from "./logger.js";
+import { log, initLogger, printBanner, printStartupError } from "./logger.js";
 import { startHeartbeat, stopHeartbeat } from "./heartbeat.js";
 import { getPrivateIps } from "./network.js";
 
@@ -18,6 +18,9 @@ async function main() {
 
   // Now env vars are populated — load structured config
   const config = loadConfig();
+
+  initLogger(config.debug);
+  if (config.debug) log.detail("Debug:", "enabled");
 
   // Connect to MongoDB
   log.dim("Connecting to MongoDB...");

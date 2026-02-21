@@ -2,6 +2,22 @@ import chalk from "chalk";
 
 const tag = chalk.bold.cyan("TARS");
 
+let debugEnabled = false;
+
+/** Call once at startup to enable/disable debug logging. */
+export function initLogger(debug: boolean) {
+  debugEnabled = debug;
+}
+
+function timestamp(): string {
+  const d = new Date();
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  const s = String(d.getSeconds()).padStart(2, "0");
+  const ms = String(d.getMilliseconds()).padStart(3, "0");
+  return `${h}:${m}:${s}.${ms}`;
+}
+
 export const log = {
   info: (msg: string) => console.log(`  ${tag} ${msg}`),
   success: (msg: string) => console.log(`  ${tag} ${chalk.green("✓")} ${msg}`),
@@ -10,6 +26,11 @@ export const log = {
   dim: (msg: string) => console.log(`  ${tag} ${chalk.dim(msg)}`),
   detail: (label: string, value: string) =>
     console.log(`  ${tag}   ${chalk.dim(label)} ${value}`),
+  debug: (msg: string) => {
+    if (debugEnabled) {
+      console.log(`  ${tag} ${chalk.dim(timestamp())} ${chalk.dim(msg)}`);
+    }
+  },
 };
 
 /**

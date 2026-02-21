@@ -73,6 +73,7 @@ export default function Home() {
           userQuestion: m.userQuestion,
           citations: m.citations,
           toolUse: m.toolUse,
+          extensionData: m.extensionData,
         }))
       );
     } catch {

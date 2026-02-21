@@ -77,6 +77,15 @@ const userQuestionSchema = new Schema(
   { _id: false }
 );
 
+const extensionDataSchema = new Schema(
+  {
+    extensionId: { type: String, required: true },
+    displayName: { type: String },
+    props: { type: Schema.Types.Mixed },
+  },
+  { _id: false }
+);
+
 const toolUseSchema = new Schema(
   {
     toolName: { type: String, required: true },
@@ -102,7 +111,7 @@ const messageSchema = new Schema({
   },
   role: {
     type: String,
-    enum: ["user", "assistant", "agent-activity", "status", "user-question", "tool-use"],
+    enum: ["user", "assistant", "agent-activity", "status", "user-question", "tool-use", "extension"],
     required: true,
   },
   content: { type: String, default: "" },
@@ -112,6 +121,7 @@ const messageSchema = new Schema({
   userQuestion: { type: userQuestionSchema },
   citations: { type: [citationSchema] },
   toolUse: { type: toolUseSchema },
+  extensionData: { type: extensionDataSchema },
 });
 
 messageSchema.index({ conversationId: 1, timestamp: 1 });

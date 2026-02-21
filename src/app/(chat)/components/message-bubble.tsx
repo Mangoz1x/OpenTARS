@@ -1,4 +1,5 @@
 import { AgentActivityCard } from "./agent-activity-card";
+import { ExtensionRenderer } from "./extension-renderer";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { Sources } from "./source-card";
 import { StatusMessage } from "./status-message";
@@ -85,6 +86,15 @@ export function MessageBubble({ message, isStreaming, onQuestionSubmit, onRetry,
       <div className="max-w-[85%]">
         <CompletedToolUse toolUse={message.toolUse} />
       </div>
+    );
+  }
+
+  if (message.role === "extension" && message.extensionData) {
+    return (
+      <ExtensionRenderer
+        extensionId={message.extensionData.extensionId}
+        displayName={message.extensionData.displayName}
+      />
     );
   }
 

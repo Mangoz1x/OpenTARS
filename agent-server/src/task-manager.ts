@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Task } from "./db/models/Task.js";
 import { TaskEventBus } from "./event-bus.js";
 import { notifyTars } from "./webhook.js";
+import { log } from "./logger.js";
 import type { CreateTaskRequest, TaskStatus } from "./types.js";
 import type { AgentServerConfig } from "./config.js";
 
@@ -48,6 +49,7 @@ export class TaskManager {
 
     const managed: ManagedTask = { taskId, abortController, eventBus };
     this.activeTasks.set(taskId, managed);
+    log.debug(`[mgr] Created task ${taskId}`);
 
     return managed;
   }
@@ -64,6 +66,13 @@ export class TaskManager {
     await Task.findByIdAndUpdate(taskId, { $set: updates });
   }
 
+  async pushActivity(taskId: string, activity: string): Promise<void> {
+    await Task.findByIdAndUpdate(taskId, {
+      $push: { activities: { $each: [activity], $slice: -50 } },
+      $set: { lastActivity: activity },
+    });
+  }
+
   async completeTask(
     taskId: string,
     status: TaskStatus,
@@ -73,6 +82,8 @@ export class TaskManager {
     turnsCompleted: number,
     filesModified: string[]
   ): Promise<void> {
+    log.debug(`[mgr] Completed ${taskId}: ${status} ($${costUsd.toFixed(2)})`);
+
     await Task.findByIdAndUpdate(taskId, {
       $set: {
         status,
@@ -103,6 +114,7 @@ export class TaskManager {
   }
 
   async failTask(taskId: string, error: string): Promise<void> {
+    log.debug(`[mgr] Failed ${taskId}: ${error}`);
     await Task.findByIdAndUpdate(taskId, {
       $set: {
         status: "failed",
@@ -124,6 +136,7 @@ export class TaskManager {
     const managed = this.activeTasks.get(taskId);
     if (!managed) return;
 
+    log.debug(`[mgr] Cancelled ${taskId}`);
     managed.abortController.abort();
 
     await Task.findByIdAndUpdate(taskId, {

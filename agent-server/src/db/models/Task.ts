@@ -15,6 +15,7 @@ const taskSchema = new Schema(
     turnsCompleted: { type: Number, default: 0 },
     costUsd: { type: Number, default: 0 },
     lastActivity: { type: String, default: "" },
+    activities: { type: [String], default: [] },
     result: { type: String, default: null },
     stopReason: { type: String, default: null },
     filesModified: { type: [String], default: [] },

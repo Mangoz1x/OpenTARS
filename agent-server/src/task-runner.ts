@@ -1,8 +1,58 @@
+import path from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { createMemoryMcpServer } from "./memory/server.js";
 import type { TaskManager, ManagedTask } from "./task-manager.js";
 import type { CreateTaskRequest } from "./types.js";
 import type { AgentServerConfig } from "./config.js";
+import { log } from "./logger.js";
+
+/** Extract a human-readable activity label from a tool's parsed input JSON. */
+function extractActivity(toolName: string, inputJson: string): string | null {
+  try {
+    const parsed = JSON.parse(inputJson);
+    switch (toolName) {
+      case "Bash": {
+        const cmd = parsed.command as string | undefined;
+        if (cmd) {
+          const truncated = cmd.length > 120 ? cmd.slice(0, 117) + "..." : cmd;
+          return `Running: ${truncated}`;
+        }
+        break;
+      }
+      case "Edit": {
+        const fp = parsed.file_path as string | undefined;
+        if (fp) return `Editing ${path.basename(fp)}`;
+        break;
+      }
+      case "Write": {
+        const fp = parsed.file_path as string | undefined;
+        if (fp) return `Writing ${path.basename(fp)}`;
+        break;
+      }
+      case "Read": {
+        const fp = parsed.file_path as string | undefined;
+        if (fp) return `Reading ${path.basename(fp)}`;
+        break;
+      }
+      case "Glob": {
+        const pattern = parsed.pattern as string | undefined;
+        if (pattern) return `Searching for ${pattern}`;
+        break;
+      }
+      case "Grep": {
+        const pat = parsed.pattern as string | undefined;
+        if (pat) {
+          const truncated = pat.length > 80 ? pat.slice(0, 77) + "..." : pat;
+          return `Searching for ${truncated}`;
+        }
+        break;
+      }
+    }
+  } catch {
+    // JSON not valid
+  }
+  return null;
+}
 
 /**
  * Runs a task using the Claude Agent SDK. This function is fire-and-forget —
@@ -16,11 +66,13 @@ export async function runTask(
 ): Promise<void> {
   const { taskId, abortController, eventBus } = managed;
 
+  log.debug(`[task] Starting ${taskId} | model=${config.defaultModel} turns=${request.maxTurns ?? config.maxTurns} budget=$${request.maxBudgetUsd ?? config.maxBudgetUsd}`);
+
   let turnsCompleted = 0;
   const filesModified = new Set<string>();
 
-  // Track active tool block for file path extraction
-  let activeToolBlock: { name: string; inputJson: string } | null = null;
+  // Track active tool block for activity extraction
+  let activeToolBlock: { name: string; inputJson: string; activityPushed: boolean } | null = null;
   let pendingToolNames: string[] = [];
 
   try {
@@ -47,6 +99,7 @@ export async function runTask(
     for await (const msg of stream) {
       // --- Session init ---
       if (msg.type === "system" && msg.subtype === "init") {
+        log.debug(`[task] Session initialized: ${msg.session_id}`);
         await taskManager.updateTask(taskId, { sessionId: msg.session_id });
       }
 
@@ -66,32 +119,33 @@ export async function runTask(
         if (event.type === "content_block_start" && "content_block" in event) {
           const block = event.content_block as { type: string; name?: string };
           if (block.type === "tool_use" && block.name) {
-            activeToolBlock = { name: block.name, inputJson: "" };
+            log.debug(`[task] Tool start: ${block.name}`);
+            activeToolBlock = { name: block.name, inputJson: "", activityPushed: false };
             eventBus.emit("tool_start", { tool: block.name });
-            await taskManager.updateTask(taskId, {
-              lastActivity: `Using ${block.name}`,
-            });
           }
         }
 
-        // Accumulate tool input JSON for file path extraction
+        // Accumulate tool input JSON for activity extraction
         if (event.type === "content_block_delta" && activeToolBlock) {
           const delta = event.delta as { type: string; partial_json?: string };
           if (delta.type === "input_json_delta" && delta.partial_json) {
             activeToolBlock.inputJson += delta.partial_json;
 
-            // Try to extract file path from Edit/Write tools
-            if (activeToolBlock.name === "Edit" || activeToolBlock.name === "Write") {
-              try {
-                const parsed = JSON.parse(activeToolBlock.inputJson);
-                if (parsed.file_path) {
-                  filesModified.add(parsed.file_path);
-                  await taskManager.updateTask(taskId, {
-                    lastActivity: `Editing ${parsed.file_path}`,
-                  });
+            // Try to extract detail once JSON is parseable
+            if (!activeToolBlock.activityPushed) {
+              const activity = extractActivity(activeToolBlock.name, activeToolBlock.inputJson);
+              if (activity) {
+                log.debug(`[task] Activity: ${activity}`);
+                activeToolBlock.activityPushed = true;
+                await taskManager.pushActivity(taskId, activity);
+
+                // Track modified files for Edit/Write
+                if (activeToolBlock.name === "Edit" || activeToolBlock.name === "Write") {
+                  try {
+                    const parsed = JSON.parse(activeToolBlock.inputJson);
+                    if (parsed.file_path) filesModified.add(parsed.file_path);
+                  } catch { /* not yet complete */ }
                 }
-              } catch {
-                // JSON not complete yet
               }
             }
           }
@@ -110,6 +164,7 @@ export async function runTask(
           }
           pendingToolNames = [];
           turnsCompleted++;
+          log.debug(`[task] Turn ${turnsCompleted} completed`);
 
           eventBus.emit("status", { turnsCompleted, costUsd: 0 });
           await taskManager.updateTask(taskId, { turnsCompleted });
@@ -132,6 +187,8 @@ export async function runTask(
           const stopReason = (resultAny.stop_reason as string) ?? "end_turn";
           const resultText = (resultAny.result as string) ?? "";
 
+          log.debug(`[task] Result: completed | cost=$${costUsd.toFixed(2)} turns=${turnsCompleted} files=${filesArr.length}`);
+
           eventBus.emit("result", {
             status: "completed",
             result: resultText,
@@ -151,6 +208,7 @@ export async function runTask(
             filesArr
           );
         } else if (msg.subtype === "error_max_turns") {
+          log.debug(`[task] Result: max_turns | turns=${turnsCompleted} files=${filesArr.length}`);
           eventBus.emit("result", {
             status: "max_turns",
             turnsCompleted,
@@ -167,6 +225,7 @@ export async function runTask(
             filesArr
           );
         } else if (msg.subtype === "error_max_budget_usd") {
+          log.debug(`[task] Result: max_budget | turns=${turnsCompleted} files=${filesArr.length}`);
           eventBus.emit("result", {
             status: "max_budget",
             turnsCompleted,
@@ -189,6 +248,7 @@ export async function runTask(
               ? msg.errors.join("; ")
               : `Task ended with status: ${msg.subtype}`;
 
+          log.debug(`[task] Error: ${errors}`);
           eventBus.emit("error", { message: errors });
           await taskManager.failTask(taskId, errors);
         }
@@ -197,6 +257,7 @@ export async function runTask(
   } catch (err) {
     // Check if this is an abort (cancellation)
     if (err instanceof Error && err.name === "AbortError") {
+      log.debug(`[task] Cancelled`);
       eventBus.emit("result", { status: "cancelled" });
       // cancelTask already updated DB
       eventBus.close();
@@ -204,6 +265,7 @@ export async function runTask(
     }
 
     const message = err instanceof Error ? err.message : "An unknown error occurred.";
+    log.debug(`[task] Error: ${message}`);
     eventBus.emit("error", { message });
     await taskManager.failTask(taskId, message);
   }

@@ -20,6 +20,8 @@ export interface WebhookPayload {
 export function notifyTars(config: AgentServerConfig, payload: WebhookPayload): void {
   if (!config.tarsUrl) return;
 
+  log.debug(`[webhook] Notifying TARS: ${payload.taskId} → ${payload.status}`);
+
   const url = `${config.tarsUrl}/api/agents/tasks/webhook`;
 
   fetch(url, {

@@ -111,6 +111,7 @@ export function AgentActivityCard({ activity, onTaskComplete }: AgentActivityCar
   const turnsCompleted = liveData.turnsCompleted ?? activity.turnsCompleted ?? 0;
   const lastActivity = liveData.lastActivity ?? activity.lastActivity ?? "";
   const costUsd = liveData.costUsd ?? activity.costUsd ?? 0;
+  const activities = liveData.activities ?? [];
 
   const displayStatus: AgentActivity["status"] = !stillRunning
     ? (mergedStatus === "completed" ? "completed" : "failed")
@@ -153,8 +154,8 @@ export function AgentActivityCard({ activity, onTaskComplete }: AgentActivityCar
           {activity.taskSummary}
         </p>
 
-        {/* Live progress line */}
-        {(turnsCompleted > 0 || lastActivity) && (
+        {/* Stats line */}
+        {(turnsCompleted > 0 || costUsd > 0) && (
           <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
             {turnsCompleted > 0 && (
               <span className="font-mono">
@@ -164,9 +165,45 @@ export function AgentActivityCard({ activity, onTaskComplete }: AgentActivityCar
             {costUsd > 0 && (
               <span className="font-mono">${costUsd.toFixed(4)}</span>
             )}
-            {lastActivity && (
-              <span className="truncate">{lastActivity}</span>
+          </div>
+        )}
+
+        {/* Activities timeline */}
+        {activities.length > 0 && (
+          <div className="flex flex-col gap-0.5 mt-0.5">
+            {activities.length > 5 && (
+              <span className="text-[11px] font-mono text-muted-foreground/30">
+                {activities.length - 5} more...
+              </span>
             )}
+            {activities.slice(-5).map((act, i, arr) => {
+              const isLast = i === arr.length - 1;
+              // Fade older entries: newest is full opacity, older ones fade
+              const opacity = isLast ? 0.7 : 0.25 + (i / arr.length) * 0.35;
+              return (
+                <div
+                  key={`${activities.length - arr.length + i}`}
+                  className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground"
+                  style={{ opacity }}
+                >
+                  {isLast && stillRunning ? (
+                    <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0" />
+                  ) : (
+                    <span className="h-2.5 w-2.5 shrink-0 flex items-center justify-center text-muted-foreground/40">
+                      &bull;
+                    </span>
+                  )}
+                  <span className="truncate">{act}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Fallback: show lastActivity if no activities array yet */}
+        {activities.length === 0 && lastActivity && (
+          <div className="text-[11px] font-mono text-muted-foreground/60 truncate">
+            {lastActivity}
           </div>
         )}
       </CardContent>

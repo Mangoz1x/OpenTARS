@@ -7,6 +7,7 @@ export interface TaskProgress {
   costUsd: number;
   result: string | null;
   error: string | null;
+  activities: string[];
 }
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "max_turns", "max_budget"]);

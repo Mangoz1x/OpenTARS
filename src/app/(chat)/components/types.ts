@@ -1,4 +1,4 @@
-export type MessageRole = "user" | "assistant" | "agent-activity" | "status" | "user-question" | "tool-use" | "tool-activity";
+export type MessageRole = "user" | "assistant" | "agent-activity" | "status" | "user-question" | "tool-use" | "tool-activity" | "extension";
 
 export interface Citation {
   url: string;
@@ -22,6 +22,12 @@ export interface ToolUse {
   detail?: string;
 }
 
+export interface ExtensionData {
+  extensionId: string;
+  displayName?: string;
+  props?: Record<string, unknown>;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
@@ -33,6 +39,7 @@ export interface ChatMessage {
   citations?: Citation[];
   toolUse?: ToolUse;
   toolSteps?: ToolStep[];
+  extensionData?: ExtensionData;
 }
 
 // --- Stop reasons & error result types ---

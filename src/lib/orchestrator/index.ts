@@ -2,6 +2,9 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { TARS_SYSTEM_PROMPT } from "./system-prompt";
 import { createMemoryMcpServer } from "@/lib/memory/server";
 import { createAgentsMcpServer } from "@/lib/agents/server";
+import { createDataStoreMcpServer } from "@/lib/data-store/server";
+import { createScriptsMcpServer } from "@/lib/scripts/server";
+import { createExtensionsMcpServer } from "@/lib/extensions/server";
 import { connectDB, Memory } from "@/lib/db";
 
 export type StopReason =
@@ -63,6 +66,9 @@ const TRACKED_TOOLS: Record<string, [canonical: string, display: string]> = {
   "mcp__tars-agents__check_status":    ["mcp__tars-agents__check_status", "agents"],
   "mcp__tars-agents__get_result":      ["mcp__tars-agents__get_result", "agents"],
   "mcp__tars-agents__cancel_task":     ["mcp__tars-agents__cancel_task", "agents"],
+  "mcp__tars-data__agent_data":        ["mcp__tars-data__agent_data", "data_store"],
+  "mcp__tars-scripts__scripts":        ["mcp__tars-scripts__scripts", "scripts"],
+  "mcp__tars-extensions__extensions":  ["mcp__tars-extensions__extensions", "extensions"],
 };
 
 function resolveToolName(raw: string): { canonical: string; display: string } | null {
@@ -114,6 +120,37 @@ function tryParseToolDetail(canonical: string, jsonStr: string): string | undefi
     }
     if (canonical === "mcp__tars-agents__cancel_task" && parsed.agent_id) {
       return `Cancelling task on ${parsed.agent_id}`;
+    }
+
+    if (canonical === "mcp__tars-data__agent_data" && parsed.command) {
+      const cmd = parsed.command as string;
+      const store = parsed.store as string | undefined;
+      if (cmd === "list_stores") return "Listing data stores";
+      if (cmd === "query") return store ? `Querying ${store}` : "Querying data store";
+      if (cmd === "get") return store ? `Reading from ${store}` : "Reading data";
+      if (cmd === "set") return store ? `Writing to ${store}` : "Writing data";
+      if (cmd === "delete") return store ? `Deleting from ${store}` : "Deleting data";
+      return "Using data store";
+    }
+
+    if (canonical === "mcp__tars-scripts__scripts" && parsed.command) {
+      const cmd = parsed.command as string;
+      const name = parsed.name as string | undefined;
+      if (cmd === "list") return "Listing scripts";
+      if (cmd === "create") return name ? `Creating script ${name}` : "Creating script";
+      if (cmd === "run") return name ? `Running ${name}` : "Running script";
+      if (cmd === "delete") return name ? `Deleting script ${name}` : "Deleting script";
+      return "Using scripts";
+    }
+
+    if (canonical === "mcp__tars-extensions__extensions" && parsed.command) {
+      const cmd = parsed.command as string;
+      const name = parsed.name as string | undefined;
+      if (cmd === "list") return "Listing extensions";
+      if (cmd === "create") return name ? `Creating ${name}` : "Creating extension";
+      if (cmd === "render") return name ? `Rendering ${name}` : "Rendering extension";
+      if (cmd === "delete") return name ? `Deleting ${name}` : "Deleting extension";
+      return "Using extensions";
     }
 
     if (canonical === "mcp__tars-memory__memory" && parsed.command) {
@@ -258,6 +295,9 @@ export async function* runOrchestrator({
         mcpServers: {
           "tars-memory": createMemoryMcpServer(),
           "tars-agents": createAgentsMcpServer(conversationId),
+          "tars-data": createDataStoreMcpServer(),
+          "tars-scripts": createScriptsMcpServer(),
+          "tars-extensions": createExtensionsMcpServer(conversationId),
         },
         includePartialMessages: true,
         abortController,

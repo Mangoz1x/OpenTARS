@@ -116,6 +116,17 @@ Before assigning, use list_agents to find an appropriate online agent. Choose an
           }
         }
 
+        // Guard: prevent duplicate running tasks for the same agent
+        const existingRunning = await Task.findOne({
+          agentId: args.agent_id,
+          status: "running",
+        }).lean();
+        if (existingRunning) {
+          return errorResult(
+            `Agent "${agent.name}" already has a running task (${(existingRunning as Record<string, unknown>)._id}). Wait for it to finish or cancel it first.`
+          );
+        }
+
         // Build request to the agent server
         const taskBody: Record<string, unknown> = {
           prompt: args.task,

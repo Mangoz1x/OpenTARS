@@ -7,3 +7,6 @@ export { SiteConfig, type ISiteConfig } from "./models/SiteConfig";
 export { Memory, type IMemory } from "./models/Memory";
 export { SetupToken, type ISetupToken } from "./models/SetupToken";
 export { Task, type ITask } from "./models/Task";
+export { DataStore, type IDataStore } from "./models/DataStore";
+export { Script, type IScript } from "./models/Script";
+export { Extension, type IExtension } from "./models/Extension";

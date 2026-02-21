@@ -40,6 +40,7 @@ export function createTaskRouter(
     // Check single-task concurrency
     if (taskManager.isRunning()) {
       const activeId = taskManager.getActiveTaskId();
+      log.debug(`[http] POST /tasks — 409 already running (${activeId})`);
       res.status(409).json({
         error: "Agent is already running a task",
         currentTaskId: activeId,
@@ -56,6 +57,9 @@ export function createTaskRouter(
         return;
       }
     }
+
+    const promptPreview = body.prompt.length > 80 ? body.prompt.slice(0, 77) + "..." : body.prompt;
+    log.debug(`[http] POST /tasks — "${promptPreview}"`);
 
     // Create task
     const managed = await taskManager.createTask(body);
@@ -81,6 +85,8 @@ export function createTaskRouter(
       return;
     }
 
+    log.debug(`[http] GET /tasks/${req.params.id} — ${task.status}`);
+
     const response: Record<string, unknown> = {
       taskId: task._id,
       sessionId: task.sessionId,
@@ -90,6 +96,7 @@ export function createTaskRouter(
       turnsCompleted: task.turnsCompleted,
       costUsd: task.costUsd,
       lastActivity: task.lastActivity,
+      activities: task.activities ?? [],
     };
 
     if (task.status === "completed") {
@@ -189,6 +196,7 @@ export function createTaskRouter(
       return;
     }
 
+    log.debug(`[http] POST /tasks/${req.params.id}/cancel`);
     await taskManager.cancelTask(req.params.id);
 
     res.json({
