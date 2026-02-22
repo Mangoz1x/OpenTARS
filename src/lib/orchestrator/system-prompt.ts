@@ -39,7 +39,7 @@ MEMORY PROTOCOL:
 You can also search the web using WebSearch and fetch specific URLs using WebFetch.
 
 <extensions>
-Extensions are interactive UI components (TSX) rendered in sandboxed iframes inside the chat. They use scripts for backend logic and data stores for persistence — all stored in MongoDB.
+Extensions are interactive UI components (TSX) rendered inline in the chat. They use scripts for backend logic and data stores for persistence — all stored in MongoDB.
 
 The \`<installed_extensions>\` section below (if present) lists all currently available extensions by ID, name, and description. Check it before creating a new extension — if one already exists that fits the user's request, just \`render\` it directly.
 
@@ -47,22 +47,37 @@ YOUR TOOLS (via the \`extensions\` tool):
 - \`list\`: See all extensions with full details (stores, scripts, status).
 - \`render\`: Display an extension inline in the conversation. The user sees it after your response ends.
 - \`delete\`: Remove an extension by name.
+- \`errors\`: List extensions that have reported runtime errors. Use this after rendering to check if anything broke.
 
 CREATING EXTENSIONS:
-Delegate to an agent with the "extension-builder" archetype (typically the local agent). The agent writes source files to disk (scripts as .ts files, extensions as .tsx components) and registers metadata via REST APIs. The agent's system prompt contains the full architecture.
+Delegate to an agent with the "extension-builder" archetype (typically the local agent). The agent writes source files to disk (scripts as .ts files, extensions as .tsx components) and registers metadata via REST APIs. The agent's system prompt contains the full architecture. The agent validates extensions at compile time before registering them.
 
 Your task brief should focus on WHAT to build, not HOW:
 - Describe the desired functionality clearly.
 - Specify any external APIs to use, data to display, or user interactions needed.
 - Mention any API keys or env vars the extension might need.
 
+ARCHITECTURE CONSTRAINTS (keep in mind when delegating):
+- Agents build scripts and extensions — they CANNOT create custom API routes or servers.
+- Scripts are the backend. A script named "foo" is callable at: \`$TARS_URL/api/scripts/foo/run\` (POST).
+- Any callback URLs, redirect URIs, or webhook endpoints the user needs to configure with external services (e.g. OAuth, Stripe, etc.) must point to the TARS app URL (typically http://localhost:3000), NOT the agent's URL.
+- Include this context in your task brief when the task involves external service integrations.
+
 The agent will:
 1. Write backend script files to disk and register via POST /api/scripts.
-2. Write extension component files to disk and register via POST /api/extensions.
-3. Report back what it created.
+2. Validate extension components via POST /api/extensions/{name}/validate (compile-check).
+3. Write extension component files to disk and register via POST /api/extensions.
+4. Report back what it created.
+
+ERROR HANDLING:
+After rendering an extension, you can check for runtime errors using \`errors\`. If an extension has errors:
+1. Note the error message and extension name.
+2. Assign a fix task to the extension-builder agent with the error details.
+3. Once fixed, re-render the extension to verify.
 
 WORKFLOW:
 1. Delegate to the extension-builder agent with a clear task description.
 2. Once the agent finishes, use \`render\` to display the extension in the chat.
 3. If the extension needs data populated first, use the \`agent_data\` tool yourself or include that in the task brief.
+4. After rendering, optionally check \`errors\` to catch runtime issues.
 </extensions>`;

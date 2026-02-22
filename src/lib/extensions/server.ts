@@ -16,15 +16,16 @@ function errorResult(text: string) {
 export function createExtensionsMcpServer(conversationId: string) {
   const extensionsTool = tool(
     "extensions",
-    `A tool for managing UI extensions. Extensions are TSX components rendered in sandboxed iframes inside the chat. Source files live on disk at userdata/extensions/{name}/component.tsx. Supports commands: list, create, render, delete.
+    `A tool for managing UI extensions. Extensions are TSX components rendered inline in the chat. Source files live on disk at userdata/extensions/{name}/component.tsx. Supports commands: list, create, render, delete, errors.
 
 Usage:
 - list: List all extensions with their IDs, names, descriptions, and linked stores/scripts
 - create: Create or update an extension. If componentSource is provided, writes it to disk. Otherwise validates the disk file exists.
 - render: Display an extension inline in the current conversation
-- delete: Delete an extension by name (removes DB record + disk files)`,
+- delete: Delete an extension by name (removes DB record + disk files)
+- errors: List extensions that have reported runtime errors (useful for discovering broken extensions to fix)`,
     {
-      command: z.enum(["list", "create", "render", "delete"]),
+      command: z.enum(["list", "create", "render", "delete", "errors"]),
       name: z.string().optional().describe("Extension name/ID (required for create, render, delete)"),
       displayName: z.string().optional().describe("Human-readable name (for create)"),
       description: z.string().optional().describe("What the extension does (for create)"),
@@ -161,6 +162,35 @@ Usage:
             }
 
             return textResult(`Extension "${args.name}" deleted.`);
+          }
+
+          case "errors": {
+            const errorExts = await Extension.find(
+              { lastError: { $exists: true, $ne: null } },
+              { _id: 1, displayName: 1, lastError: 1, lastErrorAt: 1 }
+            )
+              .sort({ lastErrorAt: -1 })
+              .lean();
+
+            if (errorExts.length === 0) {
+              return textResult("No extensions have reported errors.");
+            }
+
+            const list = (
+              errorExts as Array<{
+                _id: string;
+                displayName: string;
+                lastError: string;
+                lastErrorAt: Date;
+              }>
+            ).map((e) => {
+              const ago = e.lastErrorAt
+                ? new Date(e.lastErrorAt).toISOString()
+                : "unknown";
+              return `- ${e._id} (${e.displayName}): ${e.lastError} [${ago}]`;
+            });
+
+            return textResult(`Extensions with errors:\n${list.join("\n")}`);
           }
 
           default:

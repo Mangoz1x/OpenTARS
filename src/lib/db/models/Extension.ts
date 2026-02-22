@@ -16,6 +16,8 @@ const extensionSchema = new Schema(
     stores: { type: [String], default: [] },
     createdBy: { type: String },
     version: { type: Number, default: 1 },
+    lastError: { type: String },
+    lastErrorAt: { type: Date },
   },
   { timestamps: true }
 );

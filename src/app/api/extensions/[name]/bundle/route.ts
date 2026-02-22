@@ -3,7 +3,10 @@ import { compose } from "@/lib/middleware/compose";
 import { withAuth } from "@/lib/middleware/withAuth";
 import { withDatabase } from "@/lib/middleware/withDatabase";
 import { Extension } from "@/lib/db";
-import { compileExtension } from "@/lib/extensions/compile";
+import {
+  compileExtension,
+  compileExtensionFromSource,
+} from "@/lib/extensions/compile";
 import { getExtensionSourcePath, getExtensionCachePath } from "@/lib/userdata";
 
 const handler = compose(withAuth, withDatabase);
@@ -24,38 +27,36 @@ export const GET = handler(async (_request, context) => {
   const sourcePath = getExtensionSourcePath(name);
   const cachePath = getExtensionCachePath(name);
 
-  // Resolve source: disk first, then MongoDB fallback
-  let source: string | null = null;
-  let sourceMtime: number | null = null;
+  // Determine if source is on disk or only in MongoDB
+  const hasDiskSource = fs.existsSync(sourcePath);
+  const mongoSource = (extension as { componentSource?: string }).componentSource;
 
-  if (fs.existsSync(sourcePath)) {
-    source = fs.readFileSync(sourcePath, "utf-8");
-    sourceMtime = fs.statSync(sourcePath).mtimeMs;
-  } else if ((extension as { componentSource?: string }).componentSource) {
-    source = (extension as { componentSource: string }).componentSource;
-  }
-
-  if (!source) {
+  if (!hasDiskSource && !mongoSource) {
     return Response.json(
       { error: "No source found — neither disk file nor componentSource in DB" },
       { status: 404 }
     );
   }
 
-  // Check disk cache — serve if valid
-  if (sourceMtime && fs.existsSync(cachePath)) {
-    const cacheMtime = fs.statSync(cachePath).mtimeMs;
-    if (cacheMtime > sourceMtime) {
-      const cached = fs.readFileSync(cachePath, "utf-8");
-      return new Response(cached, {
-        headers: { "Content-Type": "application/javascript" },
-      });
+  // Check disk cache — serve if valid (only for disk sources with mtime tracking)
+  if (hasDiskSource) {
+    const sourceMtime = fs.statSync(sourcePath).mtimeMs;
+    if (fs.existsSync(cachePath)) {
+      const cacheMtime = fs.statSync(cachePath).mtimeMs;
+      if (cacheMtime > sourceMtime) {
+        const cached = fs.readFileSync(cachePath, "utf-8");
+        return new Response(cached, {
+          headers: { "Content-Type": "application/javascript" },
+        });
+      }
     }
   }
 
   // Compile TSX → JS
   try {
-    const compiled = await compileExtension(source);
+    const compiled = hasDiskSource
+      ? await compileExtension(sourcePath)
+      : await compileExtensionFromSource(mongoSource!, name);
 
     // Write to disk cache
     const cacheDir = cachePath.substring(0, cachePath.lastIndexOf("/"));
