@@ -15,7 +15,7 @@ const scriptSchema = new Schema(
     _id: { type: String },
     name: { type: String, required: true },
     description: { type: String, required: true },
-    code: { type: String, required: true },
+    code: { type: String },
     params: { type: [paramSchema], default: [] },
     createdBy: { type: String },
     version: { type: Number, default: 1 },

@@ -31,4 +31,4 @@ taskSchema.index({ createdAt: -1 });
 export type ITask = InferSchemaType<typeof taskSchema>;
 
 export const Task =
-  mongoose.models.Task ?? mongoose.model("Task", taskSchema);
+  mongoose.models.AgentTask ?? mongoose.model("AgentTask", taskSchema, "agent_tasks");

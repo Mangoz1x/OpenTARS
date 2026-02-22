@@ -44,14 +44,20 @@ export function MessageInput({
     resize();
   }, [value, resize]);
 
+  const handleSend = useCallback(() => {
+    onSend();
+    // Refocus after send so the user can keep typing
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [onSend]);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (value.trim()) onSend();
+        if (value.trim()) handleSend();
       }
     },
-    [value, onSend]
+    [value, handleSend]
   );
 
   return (
@@ -74,7 +80,7 @@ export function MessageInput({
                 size="icon"
                 className="h-8 w-8 shrink-0 rounded-lg"
                 disabled={!value.trim() || disabled}
-                onClick={onSend}
+                onClick={handleSend}
               >
                 <ArrowUp className="h-4 w-4" />
               </Button>

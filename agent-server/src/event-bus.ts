@@ -77,7 +77,6 @@ export class TaskEventBus {
   }
 
   close(): void {
-    this.closed = false;
     this.closed = true;
     this.emitter.emit("close");
   }

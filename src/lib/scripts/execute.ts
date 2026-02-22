@@ -1,6 +1,60 @@
-import { connectDB, DataStore } from "@/lib/db";
+import fs from "fs";
+import path from "path";
+import { createRequire } from "module";
+import { transform } from "esbuild";
+import { connectDB, DataStore, Script } from "@/lib/db";
+import { getScriptSourcePath, getScriptCachePath } from "@/lib/userdata";
 
-const SCRIPT_TIMEOUT_MS = 10_000;
+const SCRIPT_TIMEOUT_MS = 30_000;
+
+// A require() function anchored to this file's location so scripts can
+// load any built-in or installed Node module (e.g. require('os')).
+const requireFn = createRequire(import.meta.url);
+
+/**
+ * Resolve the executable JS code for a script by name.
+ * Disk first (with type stripping + caching), then MongoDB fallback.
+ */
+export async function resolveScriptCode(name: string): Promise<string> {
+  const sourcePath = getScriptSourcePath(name);
+  const cachePath = getScriptCachePath(name);
+
+  // Disk-first: read .ts file and strip types
+  if (fs.existsSync(sourcePath)) {
+    const sourceMtime = fs.statSync(sourcePath).mtimeMs;
+
+    // Check cache
+    if (fs.existsSync(cachePath)) {
+      const cacheMtime = fs.statSync(cachePath).mtimeMs;
+      if (cacheMtime > sourceMtime) {
+        return fs.readFileSync(cachePath, "utf-8");
+      }
+    }
+
+    // Strip types with esbuild
+    const tsSource = fs.readFileSync(sourcePath, "utf-8");
+    const result = await transform(tsSource, {
+      loader: "ts",
+      format: "cjs",
+      target: "es2020",
+    });
+
+    // Cache the result
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, result.code);
+
+    return result.code;
+  }
+
+  // Fallback: read code from MongoDB
+  await connectDB();
+  const script = await Script.findById(name).lean();
+  if (script && (script as { code?: string }).code) {
+    return (script as { code: string }).code;
+  }
+
+  throw new Error(`Script "${name}" not found — no disk file or DB code`);
+}
 
 /**
  * Execute a script with injected context (params, dataStore, fetch).
@@ -46,11 +100,12 @@ export async function executeScript(
       },
     },
     fetch,
+    require: requireFn,
   };
 
   const fn = new Function(
     "ctx",
-    `return (async () => { const { params, dataStore, fetch } = ctx; ${code} })()`
+    `return (async () => { const { params, dataStore, fetch, require } = ctx; ${code} })()`
   );
 
   return Promise.race([
@@ -59,4 +114,15 @@ export async function executeScript(
       setTimeout(() => reject(new Error("Script timeout")), SCRIPT_TIMEOUT_MS)
     ),
   ]);
+}
+
+/**
+ * Resolve and execute a script by name.
+ */
+export async function executeScriptByName(
+  name: string,
+  params: Record<string, unknown>
+): Promise<unknown> {
+  const code = await resolveScriptCode(name);
+  return executeScript(code, params);
 }

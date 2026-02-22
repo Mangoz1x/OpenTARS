@@ -53,6 +53,12 @@ async function ensureAgentDoc(): Promise<string> {
   const userdataDir =
     process.env.TARS_USERDATA_DIR || path.join(process.cwd(), "userdata");
 
+  // Ensure all userdata directories exist
+  fs.mkdirSync(path.join(userdataDir, "extensions"), { recursive: true });
+  fs.mkdirSync(path.join(userdataDir, "scripts"), { recursive: true });
+  fs.mkdirSync(path.join(userdataDir, "cache", "extensions"), { recursive: true });
+  fs.mkdirSync(path.join(userdataDir, "cache", "scripts"), { recursive: true });
+
   let doc = await Agent.findById(AGENT_ID);
 
   if (!doc) {
@@ -67,7 +73,7 @@ async function ensureAgentDoc(): Promise<string> {
       capabilities: ["code", "extensions", "frontend", "backend", "integration"],
       isLocal: true,
       autoStart: true,
-      defaultCwd: path.join(userdataDir, "extensions"),
+      defaultCwd: userdataDir,
     });
     console.log(`${PREFIX} Created agent doc (new apiKey generated)`);
   } else {
@@ -89,7 +95,7 @@ async function ensureAgentDoc(): Promise<string> {
           ],
           isLocal: true,
           autoStart: true,
-          defaultCwd: path.join(userdataDir, "extensions"),
+          defaultCwd: userdataDir,
         },
       }
     );
@@ -99,10 +105,22 @@ async function ensureAgentDoc(): Promise<string> {
 }
 
 async function ensureArchetype(): Promise<void> {
-  const existing = await Archetype.findById(extensionBuilderArchetype._id);
+  const existing = await Archetype.findById(extensionBuilderArchetype._id).lean() as { version?: number } | null;
   if (!existing) {
     await Archetype.create(extensionBuilderArchetype);
     console.log(`${PREFIX} Seeded extension-builder archetype`);
+  } else if ((existing.version ?? 0) < (extensionBuilderArchetype.version ?? 0)) {
+    await Archetype.findByIdAndUpdate(extensionBuilderArchetype._id, {
+      $set: {
+        systemPrompt: extensionBuilderArchetype.systemPrompt,
+        description: extensionBuilderArchetype.description,
+        examples: extensionBuilderArchetype.examples,
+        defaultMaxTurns: extensionBuilderArchetype.defaultMaxTurns,
+        defaultMaxBudgetUsd: extensionBuilderArchetype.defaultMaxBudgetUsd,
+        version: extensionBuilderArchetype.version,
+      },
+    });
+    console.log(`${PREFIX} Updated extension-builder archetype to v${extensionBuilderArchetype.version}`);
   }
 }
 

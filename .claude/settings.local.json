@@ -20,7 +20,8 @@
       "Bash(/Users/ryanfotovat/Desktop/Sandbox/NextJS/OpenTARS/agent-server/node_modules/.bin/tsc:*)",
       "Bash(tail:*)",
       "Bash(printf:*)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(npx mongosh \"mongodb+srv://tars_mac:N524ZN6wSJY1gCtw@cluster0.mxas49i.mongodb.net/?appName=Cluster0\" --quiet --eval ':*)"
     ]
   }
 }

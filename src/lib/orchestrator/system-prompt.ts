@@ -39,57 +39,30 @@ MEMORY PROTOCOL:
 You can also search the web using WebSearch and fetch specific URLs using WebFetch.
 
 <extensions>
-Extensions are interactive UI components (TSX) rendered in sandboxed iframes inside the chat. Agents create them; you discover and display them.
+Extensions are interactive UI components (TSX) rendered in sandboxed iframes inside the chat. They use scripts for backend logic and data stores for persistence — all stored in MongoDB.
+
+The \`<installed_extensions>\` section below (if present) lists all currently available extensions by ID, name, and description. Check it before creating a new extension — if one already exists that fits the user's request, just \`render\` it directly.
 
 YOUR TOOLS (via the \`extensions\` tool):
-- \`list\`: See all extensions (name, description, linked stores/scripts).
+- \`list\`: See all extensions with full details (stores, scripts, status).
 - \`render\`: Display an extension inline in the conversation. The user sees it after your response ends.
 - \`delete\`: Remove an extension by name.
 
 CREATING EXTENSIONS:
-Delegate extension creation to an agent — preferably one with the "extension-builder" archetype, or the local agent. Include these instructions in the task brief so the agent knows how to build the component:
+Delegate to an agent with the "extension-builder" archetype (typically the local agent). The agent writes source files to disk (scripts as .ts files, extensions as .tsx components) and registers metadata via REST APIs. The agent's system prompt contains the full architecture.
 
-- Extensions are TSX components saved to MongoDB via POST /api/extensions. The agent must POST with: { _id, displayName, description, componentSource, stores?, scripts? }.
-- Extensions run in an iframe with React 18 and Tailwind CSS loaded globally (no imports/exports).
-- Use global \`React\` (e.g. \`React.useState\`, \`React.useEffect\`).
-- Use Tailwind utility classes. The app's shadcn/zinc theme is preconfigured — semantic colors like \`bg-card\`, \`text-foreground\`, \`border\`, \`text-muted-foreground\` match the parent app's light/dark mode.
-- Read data via \`TarsSDK.dataStore.query(store)\` or \`TarsSDK.dataStore.get(store, key)\`. Run scripts via \`TarsSDK.scripts.run(name, params)\`.
-- End every component with \`TarsSDK.render(ComponentName)\`.
-- Do NOT use import/export statements or reference node_modules.
+Your task brief should focus on WHAT to build, not HOW:
+- Describe the desired functionality clearly.
+- Specify any external APIs to use, data to display, or user interactions needed.
+- Mention any API keys or env vars the extension might need.
 
-Include this component template in the task brief as a reference:
-\`\`\`tsx
-function MyWidget() {
-  const [items, setItems] = React.useState([]);
-  React.useEffect(() => {
-    TarsSDK.dataStore.query("my_store").then(setItems);
-  }, []);
-  return (
-    <div className="p-4 space-y-3">
-      <h2 className="text-lg font-semibold">Title</h2>
-      {items.map(item => (
-        <div key={item.key} className="flex justify-between items-center p-3 rounded-lg border bg-card">
-          <span className="font-medium">{item.key}</span>
-          <span className="text-muted-foreground">{JSON.stringify(item.data)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-TarsSDK.render(MyWidget);
-\`\`\`
-
-UI patterns for consistent styling:
-- Card: \`rounded-lg border bg-card p-4\`
-- Button primary: \`rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90\`
-- Button secondary: \`rounded-md border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:opacity-90\`
-- Input: \`rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring\`
-- Badge: \`inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground\`
-- Muted text: \`text-sm text-muted-foreground\`
-- Table: \`w-full text-sm\` with \`border-b\` on rows
+The agent will:
+1. Write backend script files to disk and register via POST /api/scripts.
+2. Write extension component files to disk and register via POST /api/extensions.
+3. Report back what it created.
 
 WORKFLOW:
-1. If the extension needs data, populate the data store first (via \`agent_data\` tool or have the agent do it).
-2. Delegate extension creation to an agent with the template and rules above.
-3. Once the agent finishes, use \`render\` to display it in the chat.
+1. Delegate to the extension-builder agent with a clear task description.
+2. Once the agent finishes, use \`render\` to display the extension in the chat.
+3. If the extension needs data populated first, use the \`agent_data\` tool yourself or include that in the task brief.
 </extensions>`;

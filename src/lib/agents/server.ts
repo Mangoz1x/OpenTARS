@@ -106,13 +106,21 @@ Before assigning, use list_agents to find an appropriate online agent. Choose an
           return errorResult(`Agent "${agent.name}" doesn't have a valid URL configured yet.`);
         }
 
-        // Load archetype for system prompt construction
+        // Load archetype for system prompt + defaults
         const archetypeId = (agent.preferredArchetype as string) || (agent.archetypes as string[])?.[0];
         let systemPrompt: string | undefined;
+        let archetypeMaxTurns: number | undefined;
+        let archetypeMaxBudget: number | undefined;
         if (archetypeId) {
           const archetype = await Archetype.findById(archetypeId).lean() as Record<string, unknown> | null;
           if (archetype?.systemPrompt) {
             systemPrompt = archetype.systemPrompt as string;
+          }
+          if (archetype?.defaultMaxTurns) {
+            archetypeMaxTurns = archetype.defaultMaxTurns as number;
+          }
+          if (archetype?.defaultMaxBudgetUsd) {
+            archetypeMaxBudget = archetype.defaultMaxBudgetUsd as number;
           }
         }
 
@@ -130,8 +138,8 @@ Before assigning, use list_agents to find an appropriate online agent. Choose an
         // Build request to the agent server
         const taskBody: Record<string, unknown> = {
           prompt: args.task,
-          maxTurns: args.max_turns ?? 50,
-          maxBudgetUsd: args.max_budget_usd ?? 5.0,
+          maxTurns: args.max_turns ?? archetypeMaxTurns ?? 50,
+          maxBudgetUsd: args.max_budget_usd ?? archetypeMaxBudget ?? 5.0,
         };
         if (systemPrompt) taskBody.systemPrompt = systemPrompt;
         if (args.cwd) taskBody.cwd = args.cwd;

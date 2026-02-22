@@ -17,6 +17,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Allow requests with Bearer token through — route-level withAuth validates the token
+  const authHeader = request.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    return NextResponse.next();
+  }
+
   const token = request.cookies.get(COOKIE_NAME)?.value;
 
   if (!token) {

@@ -5,7 +5,7 @@ import { createAgentsMcpServer } from "@/lib/agents/server";
 import { createDataStoreMcpServer } from "@/lib/data-store/server";
 import { createScriptsMcpServer } from "@/lib/scripts/server";
 import { createExtensionsMcpServer } from "@/lib/extensions/server";
-import { connectDB, Memory } from "@/lib/db";
+import { connectDB, Memory, Extension } from "@/lib/db";
 
 export type StopReason =
   | "end_turn"
@@ -245,6 +245,28 @@ async function loadMemoryContext(): Promise<string> {
   }
 }
 
+async function loadExtensionsContext(): Promise<string> {
+  try {
+    await connectDB();
+    const docs = await Extension.find(
+      { status: "active" },
+      { _id: 1, displayName: 1, description: 1 }
+    )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!docs.length) return "";
+
+    const list = (docs as Array<{ _id: string; displayName: string; description: string }>)
+      .map((d) => `- ${d._id}: ${d.displayName} — ${d.description}`)
+      .join("\n");
+
+    return `\n\n<installed_extensions>\n${list}\n</installed_extensions>`;
+  } catch {
+    return "";
+  }
+}
+
 export async function* runOrchestrator({
   message,
   sessionId,
@@ -282,13 +304,16 @@ export async function* runOrchestrator({
   };
 
   try {
-    const memoryContext = await loadMemoryContext();
+    const [memoryContext, extensionsContext] = await Promise.all([
+      loadMemoryContext(),
+      loadExtensionsContext(),
+    ]);
 
     const stream = query({
       prompt: message,
       options: {
         resume: sessionId,
-        systemPrompt: TARS_SYSTEM_PROMPT + memoryContext,
+        systemPrompt: TARS_SYSTEM_PROMPT + memoryContext + extensionsContext,
         model: model || DEFAULT_MODEL,
         tools: ["AskUserQuestion", "WebSearch", "WebFetch"],
         allowedTools: ["AskUserQuestion", "WebSearch", "WebFetch"],

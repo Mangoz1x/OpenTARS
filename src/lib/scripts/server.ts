@@ -1,7 +1,10 @@
+import fs from "fs";
+import path from "path";
 import { z } from "zod/v4";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { connectDB, Script } from "@/lib/db";
-import { executeScript } from "./execute";
+import { executeScriptByName } from "./execute";
+import { getScriptSourcePath, getScriptCachePath } from "@/lib/userdata";
 
 function textResult(text: string) {
   return { content: [{ type: "text" as const, text }] };
@@ -14,18 +17,18 @@ function errorResult(text: string) {
 export function createScriptsMcpServer() {
   const scriptsTool = tool(
     "scripts",
-    `A tool for managing and running shared scripts. Scripts are reusable JavaScript functions stored in the database. Any agent can create, and any agent can invoke. Supports commands: list, create, run, delete.
+    `A tool for managing and running shared scripts. Scripts are TypeScript files stored on disk at userdata/scripts/{name}.ts. Supports commands: list, create, run, delete.
 
 Usage:
 - list: List all scripts (name, description, params)
-- create: Create or update a script (name, description, code, params)
-- run: Invoke a script with params, returns the result
-- delete: Delete a script by name`,
+- create: Create or update a script. If code is provided, writes it to disk. Otherwise validates the disk file exists.
+- run: Invoke a script by name with params, returns the result
+- delete: Delete a script by name (removes DB record + disk files)`,
     {
       command: z.enum(["list", "create", "run", "delete"]),
       name: z.string().optional().describe("Script name/ID (required for create, run, delete)"),
       description: z.string().optional().describe("Script description (for create)"),
-      code: z.string().optional().describe("JavaScript source code (for create)"),
+      code: z.string().optional().describe("TypeScript source code (for create). If omitted, disk file must exist."),
       params_schema: z
         .array(
           z.object({
@@ -71,15 +74,32 @@ Usage:
           case "create": {
             if (!args.name) return errorResult("name is required for create.");
             if (!args.description) return errorResult("description is required for create.");
-            if (!args.code) return errorResult("code is required for create.");
 
+            const sourcePath = getScriptSourcePath(args.name);
+            const cachePath = getScriptCachePath(args.name);
+
+            // Write code to disk if provided
+            if (args.code) {
+              fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+              fs.writeFileSync(sourcePath, args.code);
+            } else if (!fs.existsSync(sourcePath)) {
+              return errorResult(
+                `No code provided and no disk file at ${sourcePath}. Either provide code or write the file first.`
+              );
+            }
+
+            // Delete stale cache
+            if (fs.existsSync(cachePath)) {
+              fs.unlinkSync(cachePath);
+            }
+
+            // Save metadata to MongoDB
             await Script.findByIdAndUpdate(
               args.name,
               {
                 _id: args.name,
                 name: args.name,
                 description: args.description,
-                code: args.code,
                 params: args.params_schema ?? [],
                 $inc: { version: 1 },
               },
@@ -91,13 +111,14 @@ Usage:
           case "run": {
             if (!args.name) return errorResult("name is required for run.");
 
+            // Verify script exists in registry
             const script = await Script.findById(args.name).lean();
             if (!script) {
               return errorResult(`Script "${args.name}" not found.`);
             }
 
-            const result = await executeScript(
-              (script as { code: string }).code,
+            const result = await executeScriptByName(
+              args.name,
               args.params ?? {}
             );
             return textResult(
@@ -112,6 +133,18 @@ Usage:
             if (!result) {
               return errorResult(`Script "${args.name}" not found.`);
             }
+
+            // Clean up disk files
+            const sourcePath = getScriptSourcePath(args.name);
+            const cachePath = getScriptCachePath(args.name);
+
+            if (fs.existsSync(sourcePath)) {
+              fs.unlinkSync(sourcePath);
+            }
+            if (fs.existsSync(cachePath)) {
+              fs.unlinkSync(cachePath);
+            }
+
             return textResult(`Script "${args.name}" deleted.`);
           }
 
