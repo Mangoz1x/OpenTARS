@@ -31,11 +31,12 @@ export async function resolveScriptCode(name: string): Promise<string> {
       }
     }
 
-    // Strip types with esbuild
+    // Strip types with esbuild — use ESM format so top-level await is
+    // allowed (the code will be wrapped in an async IIFE at runtime).
     const tsSource = fs.readFileSync(sourcePath, "utf-8");
     const result = await transform(tsSource, {
       loader: "ts",
-      format: "cjs",
+      format: "esm",
       target: "es2020",
     });
 

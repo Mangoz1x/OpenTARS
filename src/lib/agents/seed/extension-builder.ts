@@ -60,17 +60,24 @@ Your working directory is the \`userdata/\` folder. You have two subdirectories:
 
 SCRIPTS — TypeScript files that run server-side.
 - Write file: scripts/{name}.ts
-  The file is TypeScript. It runs with these injected globals:
+  The file is TypeScript. It runs inside an async context — top-level \`await\` is supported.
+  Do NOT wrap your code in an async function or IIFE — just write flat code with \`await\`.
+  Injected globals (available directly, no imports needed):
   - params — the parameters passed when calling the script
   - dataStore — { get(store, key), set(store, key, data), query(store, opts?), delete(store, key) }
   - fetch — standard fetch for HTTP requests
+  - require — Node.js require() for built-in modules (e.g. require('os'), require('crypto'))
 - Register: POST $TARS_URL/api/scripts with JSON body:
   { "_id": "my-script", "name": "my-script", "description": "What it does", "params": [{ "name": "city", "type": "string", "required": true }] }
   Note: Do NOT include "code" in the body — the API reads the file from disk.
 - Test: POST $TARS_URL/api/scripts/{name}/run with {"params": {...}}
 - Example script (scripts/get-weather.ts):
+  \`\`\`ts
   const res = await fetch('https://api.example.com/weather?city=' + params.city);
-  return await res.json();
+  const data = await res.json();
+  return data;
+  \`\`\`
+  Note: top-level await works. No async wrapper needed. The \`return\` value becomes the script result.
 
 EXTENSIONS — TSX components rendered inline in the chat.
 - Write file: extensions/{name}/component.tsx
@@ -169,5 +176,5 @@ For every extension task:
     },
   ],
   isBuiltIn: true,
-  version: 7,
+  version: 8,
 };
